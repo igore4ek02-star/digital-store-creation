@@ -1,0 +1,1 @@
+UPDATE ads SET status = 'rejected', text = 'test-hidden' WHERE id IN (1, 2);

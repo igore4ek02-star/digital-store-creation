@@ -193,6 +193,42 @@ def handler(event: dict, context):
                 ]
                 return resp(200, {'products': products, 'ads': ads}, headers_common)
 
+            if section == 'banners':
+                cur.execute(
+                    f"SELECT a.id, a.text, a.link, a.days, a.price_per_day, a.total_price, a.status, "
+                    f"a.starts_at, a.ends_at, a.created_at, a.ad_type, a.image_url, a.impressions, a.clicks, "
+                    f"u.name, u.email "
+                    f"FROM {SCHEMA}.ads a JOIN {SCHEMA}.users u ON u.id = a.user_id "
+                    f"ORDER BY a.created_at DESC LIMIT 300"
+                )
+                items = [
+                    {
+                        'id': r[0], 'text': r[1], 'link': r[2], 'days': r[3],
+                        'pricePerDay': float(r[4]), 'totalPrice': float(r[5]), 'status': r[6],
+                        'startsAt': r[7].strftime('%d.%m.%Y') if r[7] else None,
+                        'endsAt': r[8].strftime('%d.%m.%Y') if r[8] else None,
+                        'createdAt': r[9].strftime('%d.%m.%Y'),
+                        'adType': r[10], 'imageUrl': r[11],
+                        'impressions': r[12], 'clicks': r[13],
+                        'ctr': round(r[13] / r[12] * 100, 1) if r[12] else 0,
+                        'userName': r[14], 'userEmail': r[15],
+                    }
+                    for r in cur.fetchall()
+                ]
+                return resp(200, {'ads': items}, headers_common)
+
+            if section == 'ad-settings':
+                cur.execute(
+                    f"SELECT key, value FROM {SCHEMA}.site_settings "
+                    f"WHERE key IN ('ad_price_per_day', 'banner_price_per_day', 'ads_auto_publish')"
+                )
+                settings = {r[0]: r[1] for r in cur.fetchall()}
+                return resp(200, {
+                    'adPricePerDay': float(settings.get('ad_price_per_day', 150)),
+                    'bannerPricePerDay': float(settings.get('banner_price_per_day', 300)),
+                    'autoPublish': settings.get('ads_auto_publish') == 'true',
+                }, headers_common)
+
             if section == 'notifications':
                 cur.execute(
                     f"SELECT id, type, title, message, entity_id, is_read, created_at "
@@ -313,6 +349,53 @@ def handler(event: dict, context):
                     cur.execute(f"UPDATE {SCHEMA}.users SET is_admin = %s WHERE id = %s", (is_admin, uid))
                 if balance is not None:
                     cur.execute(f"UPDATE {SCHEMA}.users SET balance = %s WHERE id = %s", (balance, uid))
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
+            if action == 'update-ad-settings':
+                ad_price = body.get('adPricePerDay')
+                banner_price = body.get('bannerPricePerDay')
+                auto_publish = body.get('autoPublish')
+                if ad_price is not None:
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.site_settings (key, value) VALUES ('ad_price_per_day', %s) "
+                        f"ON CONFLICT (key) DO UPDATE SET value = %s",
+                        (str(ad_price), str(ad_price)),
+                    )
+                if banner_price is not None:
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.site_settings (key, value) VALUES ('banner_price_per_day', %s) "
+                        f"ON CONFLICT (key) DO UPDATE SET value = %s",
+                        (str(banner_price), str(banner_price)),
+                    )
+                if auto_publish is not None:
+                    val = 'true' if auto_publish else 'false'
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.site_settings (key, value) VALUES ('ads_auto_publish', %s) "
+                        f"ON CONFLICT (key) DO UPDATE SET value = %s",
+                        (val, val),
+                    )
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
+            if action == 'toggle-ad-status':
+                aid = body['id']
+                new_status = body['status']
+                if new_status == 'active':
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.ads SET status = 'active', "
+                        f"starts_at = COALESCE(starts_at, now()), "
+                        f"ends_at = COALESCE(ends_at, now() + (days || ' days')::interval) WHERE id = %s",
+                        (aid,),
+                    )
+                else:
+                    cur.execute(f"UPDATE {SCHEMA}.ads SET status = %s WHERE id = %s", (new_status, aid))
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
+            if action == 'delete-ad':
+                aid = body['id']
+                cur.execute(f"UPDATE {SCHEMA}.ads SET status = 'deleted' WHERE id = %s", (aid,))
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 

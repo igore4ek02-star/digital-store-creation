@@ -19,11 +19,16 @@ import { formatPrice } from './products';
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  defaultType?: 'text' | 'banner';
 }
 
-const AdOrderDialog = ({ open, onOpenChange }: Props) => {
+const AdOrderDialog = ({ open, onOpenChange, defaultType = 'text' }: Props) => {
   const { user, refreshUser } = useAuth();
-  const [adType, setAdType] = useState<'text' | 'banner'>('text');
+  const [adType, setAdType] = useState<'text' | 'banner'>(defaultType);
+
+  useEffect(() => {
+    if (open) setAdType(defaultType);
+  }, [open, defaultType]);
 
   const [pricePerDay, setPricePerDay] = useState(150);
   const [bannerPricePerDay, setBannerPricePerDay] = useState(300);

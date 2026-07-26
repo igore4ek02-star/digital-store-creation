@@ -28,6 +28,7 @@ import AdminPayouts from "./pages/admin/Payouts";
 import AdminUsers from "./pages/admin/Users";
 import AdminModeration from "./pages/admin/Moderation";
 import AdminSupport from "./pages/admin/Support";
+import AdminBanners from "./pages/admin/Banners";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/moderation" element={<AdminModeration />} />
+            <Route path="/admin/banners" element={<AdminBanners />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/activity" element={<AdminActivity />} />
             <Route path="/admin/finance" element={<AdminFinance />} />

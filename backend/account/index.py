@@ -41,7 +41,7 @@ def get_user(cur, token: str):
 
 
 def ad_dict(row) -> dict:
-    return {
+    d = {
         'id': row[0],
         'text': row[1],
         'link': row[2],
@@ -55,6 +55,10 @@ def ad_dict(row) -> dict:
         'adType': row[10] if len(row) > 10 else 'text',
         'imageUrl': row[11] if len(row) > 11 else None,
     }
+    if len(row) > 13:
+        d['impressions'] = row[12]
+        d['clicks'] = row[13]
+    return d
 
 
 def upload_banner_image(image_base64: str) -> str:
@@ -206,22 +210,56 @@ def handle_ads(event, cur, conn, method, headers_common, token, params):
             f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'ad_purchase', %s, %s)",
             (user_id, -total, notif_text),
         )
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.ads (user_id, text, link, days, price_per_day, total_price, status, ad_type, image_url) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s) "
-            f"RETURNING id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at, ad_type, image_url",
-            (user_id, text, link, days, price_per_day, total, ad_type, image_url),
-        )
+
+        cur.execute(f"SELECT value FROM {SCHEMA}.site_settings WHERE key = 'ads_auto_publish'")
+        auto_row = cur.fetchone()
+        auto_publish = auto_row and auto_row[0] == 'true'
+
+        if auto_publish:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.ads (user_id, text, link, days, price_per_day, total_price, status, "
+                f"ad_type, image_url, starts_at, ends_at) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, %s, now(), now() + (%s || ' days')::interval) "
+                f"RETURNING id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at, ad_type, image_url",
+                (user_id, text, link, days, price_per_day, total, ad_type, image_url, days),
+            )
+        else:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.ads (user_id, text, link, days, price_per_day, total_price, status, ad_type, image_url) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s) "
+                f"RETURNING id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at, ad_type, image_url",
+                (user_id, text, link, days, price_per_day, total, ad_type, image_url),
+            )
         row = cur.fetchone()
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
-            f"VALUES ('ad_moderation', 'Новая заявка на рекламу', %s, %s)",
-            (notif_text, row[0]),
-        )
+
+        if auto_publish:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
+                f"VALUES ('ad_moderation', 'Реклама опубликована автоматически', %s, %s, TRUE)",
+                (notif_text, row[0]),
+            )
+        else:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+                f"VALUES ('ad_moderation', 'Новая заявка на рекламу', %s, %s)",
+                (notif_text, row[0]),
+            )
         conn.commit()
         return resp(200, {'ad': ad_dict(row)}, headers_common)
 
     return resp(405, {'error': 'Метод не поддерживается'}, headers_common)
+
+
+def handle_ad_track(event, cur, conn, headers_common):
+    body = json.loads(event.get('body') or '{}')
+    ad_id = body.get('adId')
+    action = body.get('action')
+    if not ad_id or action not in ('impression', 'click'):
+        return resp(400, {'error': 'Некорректные данные'}, headers_common)
+    column = 'impressions' if action == 'impression' else 'clicks'
+    cur.execute(f"UPDATE {SCHEMA}.ads SET {column} = {column} + 1 WHERE id = %s", (ad_id,))
+    conn.commit()
+    return resp(200, {'ok': True}, headers_common)
 
 
 def handle_support(event, cur, conn, method, headers_common, token, params):
@@ -501,6 +539,8 @@ def handler(event: dict, context):
             return handle_presence(event, cur, conn, method, headers_common, token)
         if resource == 'ads':
             return handle_ads(event, cur, conn, method, headers_common, token, params)
+        if resource == 'ad-track' and method == 'POST':
+            return handle_ad_track(event, cur, conn, headers_common)
         if resource == 'support':
             return handle_support(event, cur, conn, method, headers_common, token, params)
         if resource == 'wallet':
