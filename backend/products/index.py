@@ -120,6 +120,12 @@ def handler(event: dict, context):
                     f"INSERT INTO {SCHEMA}.product_images (product_id, image_url, sort_order) VALUES (%s,%s,%s)",
                     (row[0], url, i),
                 )
+            if status == 'pending':
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+                    f"VALUES ('product_moderation', 'Новый товар на модерацию', %s, %s)",
+                    (f"«{row[1]}» ждёт проверки", row[0]),
+                )
             conn.commit()
             return resp(200, {'product': product_dict(row)}, headers_common)
 

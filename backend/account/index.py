@@ -141,6 +141,11 @@ def handle_ads(event, cur, conn, method, headers_common, token, params):
             (user_id, text, link, days, price_per_day, total),
         )
         row = cur.fetchone()
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+            f"VALUES ('ad_moderation', 'Новая заявка на рекламу', %s, %s)",
+            (f"«{text}» на {days} дн.", row[0]),
+        )
         conn.commit()
         return resp(200, {'ad': ad_dict(row)}, headers_common)
 
@@ -262,8 +267,15 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
             (user_id, -amount, f'Заявка на выплату через {method_name}'),
         )
         cur.execute(
-            f"INSERT INTO {SCHEMA}.payouts (user_id, amount, method, wallet, status) VALUES (%s, %s, %s, %s, 'pending')",
+            f"INSERT INTO {SCHEMA}.payouts (user_id, amount, method, wallet, status) VALUES (%s, %s, %s, %s, 'pending') "
+            f"RETURNING id",
             (user_id, amount, method_name, wallet),
+        )
+        payout_id = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+            f"VALUES ('payout_request', 'Заявка на вывод средств', %s, %s)",
+            (f'{amount:.0f} ₽ через {method_name}', payout_id),
         )
         conn.commit()
         return resp(200, {'ok': True}, headers_common)

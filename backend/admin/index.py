@@ -168,6 +168,22 @@ def handler(event: dict, context):
                 ]
                 return resp(200, {'products': products, 'ads': ads}, headers_common)
 
+            if section == 'notifications':
+                cur.execute(
+                    f"SELECT id, type, title, message, entity_id, is_read, created_at "
+                    f"FROM {SCHEMA}.admin_notifications ORDER BY created_at DESC LIMIT 50"
+                )
+                items = [
+                    {
+                        'id': r[0], 'type': r[1], 'title': r[2], 'message': r[3], 'entityId': r[4],
+                        'isRead': r[5], 'createdAt': r[6].strftime('%d.%m.%Y %H:%M'),
+                    }
+                    for r in cur.fetchall()
+                ]
+                cur.execute(f"SELECT count(*) FROM {SCHEMA}.admin_notifications WHERE is_read = FALSE")
+                unread = cur.fetchone()[0]
+                return resp(200, {'notifications': items, 'unreadCount': unread}, headers_common)
+
             return resp(400, {'error': 'Неизвестный раздел'}, headers_common)
 
         body = json.loads(event.get('body') or '{}')
@@ -179,6 +195,11 @@ def handler(event: dict, context):
                 pid = body['id']
                 new_status = body['status']
                 cur.execute(f"UPDATE {SCHEMA}.products SET status = %s WHERE id = %s", (new_status, pid))
+                cur.execute(
+                    f"UPDATE {SCHEMA}.admin_notifications SET is_read = TRUE "
+                    f"WHERE type = 'product_moderation' AND entity_id = %s",
+                    (pid,),
+                )
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 
@@ -193,6 +214,11 @@ def handler(event: dict, context):
                     )
                 else:
                     cur.execute(f"UPDATE {SCHEMA}.ads SET status = %s WHERE id = %s", (new_status, aid))
+                cur.execute(
+                    f"UPDATE {SCHEMA}.admin_notifications SET is_read = TRUE "
+                    f"WHERE type = 'ad_moderation' AND entity_id = %s",
+                    (aid,),
+                )
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 
@@ -200,6 +226,11 @@ def handler(event: dict, context):
                 payout_id = body['id']
                 new_status = body['status']
                 cur.execute(f"UPDATE {SCHEMA}.payouts SET status = %s WHERE id = %s", (new_status, payout_id))
+                cur.execute(
+                    f"UPDATE {SCHEMA}.admin_notifications SET is_read = TRUE "
+                    f"WHERE type = 'payout_request' AND entity_id = %s",
+                    (payout_id,),
+                )
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 
@@ -214,6 +245,18 @@ def handler(event: dict, context):
                     cur.execute(f"UPDATE {SCHEMA}.users SET is_admin = %s WHERE id = %s", (is_admin, uid))
                 if balance is not None:
                     cur.execute(f"UPDATE {SCHEMA}.users SET balance = %s WHERE id = %s", (balance, uid))
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
+            if action == 'mark-notifications-read':
+                ids = body.get('ids')
+                if ids:
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.admin_notifications SET is_read = TRUE WHERE id = ANY(%s)",
+                        (ids,),
+                    )
+                else:
+                    cur.execute(f"UPDATE {SCHEMA}.admin_notifications SET is_read = TRUE WHERE is_read = FALSE")
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 

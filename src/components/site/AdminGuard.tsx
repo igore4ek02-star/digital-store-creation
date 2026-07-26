@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/hooks/use-auth';
 import AdminNav from './AdminNav';
+import AdminNotifications from './AdminNotifications';
 
 const AdminGuard = ({ children }: { children: ReactNode }) => {
   const { user, loading } = useAuth();
@@ -39,13 +40,16 @@ const AdminGuard = ({ children }: { children: ReactNode }) => {
           <span className="hidden font-head text-sm uppercase tracking-wide text-muted-foreground sm:inline">
             / Админ-панель
           </span>
-          <Link
-            to="/"
-            className="ml-auto inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
-          >
-            <Icon name="ArrowLeft" size={15} />
-            На сайт
-          </Link>
+          <div className="ml-auto flex items-center gap-3">
+            <AdminNotifications />
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
+            >
+              <Icon name="ArrowLeft" size={15} />
+              На сайт
+            </Link>
+          </div>
         </div>
       </header>
 
