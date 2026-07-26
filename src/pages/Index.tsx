@@ -1,4 +1,5 @@
 import Header from '@/components/site/Header';
+import BannerSlots from '@/components/site/BannerSlots';
 import Hero from '@/components/site/Hero';
 import Catalog from '@/components/site/Catalog';
 import HowItWorks from '@/components/site/HowItWorks';
@@ -10,6 +11,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background font-body">
       <Header />
+      <BannerSlots />
       <main>
         <Hero />
         <Catalog />

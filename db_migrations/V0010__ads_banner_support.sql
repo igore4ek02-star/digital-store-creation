@@ -1,0 +1,4 @@
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS ad_type VARCHAR(10) NOT NULL DEFAULT 'text';
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_ads_type_status ON ads(ad_type, status);

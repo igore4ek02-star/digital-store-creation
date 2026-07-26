@@ -4,7 +4,9 @@ import base64
 import hashlib
 import urllib.request
 import urllib.parse
+import uuid
 import psycopg2
+import boto3
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 'public')
 
@@ -50,7 +52,32 @@ def ad_dict(row) -> dict:
         'startsAt': row[7].strftime('%d.%m.%Y') if row[7] else None,
         'endsAt': row[8].strftime('%d.%m.%Y') if row[8] else None,
         'createdAt': row[9].strftime('%d.%m.%Y'),
+        'adType': row[10] if len(row) > 10 else 'text',
+        'imageUrl': row[11] if len(row) > 11 else None,
     }
+
+
+def upload_banner_image(image_base64: str) -> str:
+    if ',' in image_base64:
+        header, image_base64 = image_base64.split(',', 1)
+    else:
+        header = ''
+    ext = 'png'
+    if 'jpeg' in header or 'jpg' in header:
+        ext = 'jpg'
+    elif 'webp' in header:
+        ext = 'webp'
+    data = base64.b64decode(image_base64)
+    key = f"banners/{uuid.uuid4().hex}.{ext}"
+    s3 = boto3.client(
+        's3',
+        endpoint_url='https://bucket.poehali.dev',
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+    content_type = {'png': 'image/png', 'jpg': 'image/jpeg', 'webp': 'image/webp'}[ext]
+    s3.put_object(Bucket='files', Key=key, Body=data, ContentType=content_type)
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
 def ticket_dict(row, with_user=False) -> dict:
@@ -110,15 +137,26 @@ def handle_presence(event, cur, conn, method, headers_common, token):
 def handle_ads(event, cur, conn, method, headers_common, token, params):
     if method == 'GET':
         if params.get('active') == '1':
-            cur.execute(
-                f"SELECT id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at "
-                f"FROM {SCHEMA}.ads WHERE status = 'active' AND ends_at > now() ORDER BY created_at DESC"
-            )
+            ad_type = params.get('type')
+            if ad_type:
+                cur.execute(
+                    f"SELECT id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at, ad_type, image_url "
+                    f"FROM {SCHEMA}.ads WHERE status = 'active' AND ends_at > now() AND ad_type = %s ORDER BY starts_at ASC",
+                    (ad_type,),
+                )
+            else:
+                cur.execute(
+                    f"SELECT id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at, ad_type, image_url "
+                    f"FROM {SCHEMA}.ads WHERE status = 'active' AND ends_at > now() ORDER BY created_at DESC"
+                )
             return resp(200, {'ads': [ad_dict(r) for r in cur.fetchall()]}, headers_common)
         cur.execute(f"SELECT value FROM {SCHEMA}.site_settings WHERE key = 'ad_price_per_day'")
         row = cur.fetchone()
         price = float(row[0]) if row else 150.0
-        return resp(200, {'pricePerDay': price}, headers_common)
+        cur.execute(f"SELECT value FROM {SCHEMA}.site_settings WHERE key = 'banner_price_per_day'")
+        row2 = cur.fetchone()
+        banner_price = float(row2[0]) if row2 else 300.0
+        return resp(200, {'pricePerDay': price, 'bannerPricePerDay': banner_price}, headers_common)
 
     user_id = (get_user(cur, token) or [None])[0]
     if not user_id:
@@ -126,14 +164,38 @@ def handle_ads(event, cur, conn, method, headers_common, token, params):
 
     body = json.loads(event.get('body') or '{}')
     if method == 'POST':
-        text = (body.get('text') or '').strip()
+        ad_type = body.get('adType', 'text')
+        if ad_type not in ('text', 'banner'):
+            return resp(400, {'error': 'Неизвестный тип рекламы'}, headers_common)
         link = (body.get('link') or '').strip() or None
         days = int(body.get('days') or 0)
-        if len(text) < 3 or days < 1:
-            return resp(400, {'error': 'Заполните текст объявления и срок показа'}, headers_common)
-        cur.execute(f"SELECT value FROM {SCHEMA}.site_settings WHERE key = 'ad_price_per_day'")
+        if days < 1:
+            return resp(400, {'error': 'Укажите срок показа'}, headers_common)
+
+        image_url = None
+        if ad_type == 'banner':
+            image_b64 = body.get('image')
+            if not image_b64:
+                return resp(400, {'error': 'Загрузите изображение баннера 468×60'}, headers_common)
+            try:
+                image_url = upload_banner_image(image_b64)
+            except Exception:
+                return resp(400, {'error': 'Не удалось загрузить изображение'}, headers_common)
+            text = (body.get('text') or '').strip() or 'Баннер'
+            settings_key = 'banner_price_per_day'
+            default_price = 300.0
+            notif_text = f"Баннер 468×60 на {days} дн."
+        else:
+            text = (body.get('text') or '').strip()
+            if len(text) < 3:
+                return resp(400, {'error': 'Заполните текст объявления'}, headers_common)
+            settings_key = 'ad_price_per_day'
+            default_price = 150.0
+            notif_text = f"«{text}» на {days} дн."
+
+        cur.execute(f"SELECT value FROM {SCHEMA}.site_settings WHERE key = %s", (settings_key,))
         row = cur.fetchone()
-        price_per_day = float(row[0]) if row else 150.0
+        price_per_day = float(row[0]) if row else default_price
         total = price_per_day * days
         cur.execute(f"SELECT balance FROM {SCHEMA}.users WHERE id = %s FOR UPDATE", (user_id,))
         balance = float(cur.fetchone()[0])
@@ -142,19 +204,19 @@ def handle_ads(event, cur, conn, method, headers_common, token, params):
         cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance - %s WHERE id = %s", (total, user_id))
         cur.execute(
             f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'ad_purchase', %s, %s)",
-            (user_id, -total, f'Реклама на {days} дн.'),
+            (user_id, -total, notif_text),
         )
         cur.execute(
-            f"INSERT INTO {SCHEMA}.ads (user_id, text, link, days, price_per_day, total_price, status) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, 'pending') "
-            f"RETURNING id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at",
-            (user_id, text, link, days, price_per_day, total),
+            f"INSERT INTO {SCHEMA}.ads (user_id, text, link, days, price_per_day, total_price, status, ad_type, image_url) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s) "
+            f"RETURNING id, text, link, days, price_per_day, total_price, status, starts_at, ends_at, created_at, ad_type, image_url",
+            (user_id, text, link, days, price_per_day, total, ad_type, image_url),
         )
         row = cur.fetchone()
         cur.execute(
             f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
             f"VALUES ('ad_moderation', 'Новая заявка на рекламу', %s, %s)",
-            (f"«{text}» на {days} дн.", row[0]),
+            (notif_text, row[0]),
         )
         conn.commit()
         return resp(200, {'ad': ad_dict(row)}, headers_common)

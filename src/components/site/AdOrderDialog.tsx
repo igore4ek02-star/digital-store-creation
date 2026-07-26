@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
 import { useAuth, getAuthToken } from '@/hooks/use-auth';
@@ -22,11 +23,19 @@ interface Props {
 
 const AdOrderDialog = ({ open, onOpenChange }: Props) => {
   const { user, refreshUser } = useAuth();
+  const [adType, setAdType] = useState<'text' | 'banner'>('text');
+
   const [pricePerDay, setPricePerDay] = useState(150);
+  const [bannerPricePerDay, setBannerPricePerDay] = useState(300);
+
   const [text, setText] = useState('');
   const [link, setLink] = useState('');
   const [days, setDays] = useState('3');
   const [submitting, setSubmitting] = useState(false);
+
+  const [bannerImage, setBannerImage] = useState<string | null>(null);
+  const [bannerFileName, setBannerFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -34,16 +43,47 @@ const AdOrderDialog = ({ open, onOpenChange }: Props) => {
       .then((r) => r.json())
       .then((d) => {
         if (typeof d.pricePerDay === 'number') setPricePerDay(d.pricePerDay);
+        if (typeof d.bannerPricePerDay === 'number') setBannerPricePerDay(d.bannerPricePerDay);
       })
       .catch(() => {});
   }, [open]);
 
   const daysNum = Number(days) || 0;
-  const total = pricePerDay * daysNum;
+  const activePrice = adType === 'banner' ? bannerPricePerDay : pricePerDay;
+  const total = activePrice * daysNum;
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      toast.error('Поддерживаются форматы PNG, JPEG, WEBP');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      toast.error('Файл слишком большой (максимум 1 МБ)');
+      return;
+    }
+    setBannerFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => setBannerImage(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const reset = () => {
+    setText('');
+    setLink('');
+    setDays('3');
+    setBannerImage(null);
+    setBannerFileName('');
+  };
 
   const submit = async () => {
-    if (text.trim().length < 3) {
+    if (adType === 'text' && text.trim().length < 3) {
       toast.error('Введите текст объявления');
+      return;
+    }
+    if (adType === 'banner' && !bannerImage) {
+      toast.error('Загрузите изображение баннера 468×60');
       return;
     }
     if (daysNum < 1) {
@@ -58,7 +98,13 @@ const AdOrderDialog = ({ open, onOpenChange }: Props) => {
           'Content-Type': 'application/json',
           'X-Authorization': `Bearer ${getAuthToken()}`,
         },
-        body: JSON.stringify({ text: text.trim(), link: link.trim(), days: daysNum }),
+        body: JSON.stringify({
+          adType,
+          text: text.trim(),
+          link: link.trim(),
+          days: daysNum,
+          image: adType === 'banner' ? bannerImage : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -69,9 +115,7 @@ const AdOrderDialog = ({ open, onOpenChange }: Props) => {
         description: `Спишем ${formatPrice(total)} после одобрения модератором.`,
       });
       await refreshUser();
-      setText('');
-      setLink('');
-      setDays('3');
+      reset();
       onOpenChange(false);
     } finally {
       setSubmitting(false);
@@ -86,10 +130,10 @@ const AdOrderDialog = ({ open, onOpenChange }: Props) => {
             <Icon name="Megaphone" size={22} />
           </div>
           <DialogTitle className="font-head text-xl uppercase tracking-wide">
-            Текстовая реклама
+            Реклама на сайте
           </DialogTitle>
           <DialogDescription>
-            Объявление появится в верхней карусели сайта после одобрения модератором.
+            Объявление появится на сайте после одобрения модератором.
           </DialogDescription>
         </DialogHeader>
 
@@ -102,16 +146,68 @@ const AdOrderDialog = ({ open, onOpenChange }: Props) => {
           </p>
         ) : (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="ad-text">Текст объявления</Label>
-              <Input
-                id="ad-text"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Например: Скидка 20% на все шаблоны"
-                maxLength={100}
-              />
-            </div>
+            <Tabs value={adType} onValueChange={(v) => setAdType(v as 'text' | 'banner')}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="text">Текстовое объявление</TabsTrigger>
+                <TabsTrigger value="banner">Баннер 468×60</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="text" className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="ad-text">Текст объявления</Label>
+                  <Input
+                    id="ad-text"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    placeholder="Например: Скидка 20% на все шаблоны"
+                    maxLength={100}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="banner" className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label>Изображение баннера (468×60 px)</Label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={onFileChange}
+                  />
+                  {bannerImage ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-center overflow-hidden rounded-lg border border-border bg-muted/30 p-2">
+                        <img src={bannerImage} alt="Превью баннера" className="h-[60px] w-[468px] max-w-full object-cover" />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="truncate">{bannerFileName}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBannerImage(null);
+                            setBannerFileName('');
+                          }}
+                          className="text-destructive hover:underline"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-6 text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
+                    >
+                      <Icon name="ImagePlus" size={22} />
+                      <span className="text-xs">PNG, JPEG или WEBP, до 1 МБ, размер 468×60</span>
+                    </button>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+
             <div className="space-y-2">
               <Label htmlFor="ad-link">Ссылка (необязательно)</Label>
               <Input
@@ -134,7 +230,7 @@ const AdOrderDialog = ({ open, onOpenChange }: Props) => {
 
             <div className="flex items-baseline justify-between rounded-xl border border-border bg-muted/40 px-4 py-3">
               <span className="text-sm text-muted-foreground">
-                {formatPrice(pricePerDay)} × {daysNum || 0} дн.
+                {formatPrice(activePrice)} × {daysNum || 0} дн.
               </span>
               <span className="font-head text-xl font-bold text-primary">{formatPrice(total)}</span>
             </div>

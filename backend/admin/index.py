@@ -180,13 +180,14 @@ def handler(event: dict, context):
                     for r in cur.fetchall()
                 ]
                 cur.execute(
-                    f"SELECT id, text, link, days, total_price, status, created_at FROM {SCHEMA}.ads "
+                    f"SELECT id, text, link, days, total_price, status, created_at, ad_type, image_url FROM {SCHEMA}.ads "
                     f"WHERE status = 'pending' ORDER BY created_at DESC"
                 )
                 ads = [
                     {
                         'id': r[0], 'text': r[1], 'link': r[2], 'days': r[3], 'totalPrice': float(r[4]),
                         'status': r[5], 'createdAt': r[6].strftime('%d.%m.%Y'),
+                        'adType': r[7], 'imageUrl': r[8],
                     }
                     for r in cur.fetchall()
                 ]

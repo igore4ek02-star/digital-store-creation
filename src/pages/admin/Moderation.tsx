@@ -26,6 +26,8 @@ interface PendingAd {
   totalPrice: number;
   status: string;
   createdAt: string;
+  adType: string;
+  imageUrl: string | null;
 }
 
 const AdminModeration = () => {
@@ -152,9 +154,16 @@ const AdminModeration = () => {
                   >
                     <div>
                       <p className="flex items-center gap-2 font-head font-semibold text-foreground">
-                        <Icon name="Megaphone" size={16} className="text-primary" />
-                        {a.text}
+                        <Icon name={a.adType === 'banner' ? 'Image' : 'Megaphone'} size={16} className="text-primary" />
+                        {a.adType === 'banner' ? 'Баннер 468×60' : a.text}
                       </p>
+                      {a.adType === 'banner' && a.imageUrl && (
+                        <img
+                          src={a.imageUrl}
+                          alt={a.text}
+                          className="mt-2 h-[60px] w-[468px] max-w-full rounded-md border border-border object-cover"
+                        />
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">
                         {a.days} дн. · {formatPrice(a.totalPrice)} · {a.createdAt}
                         {a.link && ` · ${a.link}`}

@@ -1,0 +1,1 @@
+UPDATE ads SET status = 'rejected' WHERE text IN ('Тестовый баннер 1', 'Тестовый баннер 2');
