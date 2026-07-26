@@ -1,0 +1,1 @@
+UPDATE users SET is_admin = TRUE WHERE email = 'igore4ek0208@bk.ru';
