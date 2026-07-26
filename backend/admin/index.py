@@ -1,8 +1,32 @@
 import json
 import os
+import hashlib
+import urllib.request
+import urllib.parse
 import psycopg2
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 'public')
+
+AZVOX_PAYOUT_ACCOUNT = os.environ.get('AZVOX_PAYOUT_ACCOUNT', '')
+AZVOX_PAYOUT_API_ID = os.environ.get('AZVOX_PAYOUT_API_ID', '')
+AZVOX_PAYOUT_API_PASS = os.environ.get('AZVOX_PAYOUT_API_PASS', '')
+
+
+def azvox_transfer(to_wallet: str, amount: float, comment: str):
+    payload = {
+        'account': AZVOX_PAYOUT_ACCOUNT,
+        'apiId': AZVOX_PAYOUT_API_ID,
+        'apiPass': AZVOX_PAYOUT_API_PASS,
+        'action': 'transfer',
+        'to_wallet': to_wallet,
+        'amount': f"{amount:.2f}",
+        'cur': 'RUB',
+        'comment': comment[:50],
+    }
+    data = urllib.parse.urlencode(payload).encode('utf-8')
+    req = urllib.request.Request('https://azvox.cash/api/v3.6/', data=data, method='POST')
+    with urllib.request.urlopen(req, timeout=20) as f:
+        return json.loads(f.read().decode('utf-8'))
 
 
 def get_conn():
@@ -225,7 +249,50 @@ def handler(event: dict, context):
             if action == 'process-payout':
                 payout_id = body['id']
                 new_status = body['status']
-                cur.execute(f"UPDATE {SCHEMA}.payouts SET status = %s WHERE id = %s", (new_status, payout_id))
+
+                if new_status == 'completed':
+                    cur.execute(
+                        f"SELECT amount, method, wallet, status FROM {SCHEMA}.payouts WHERE id = %s",
+                        (payout_id,),
+                    )
+                    payout = cur.fetchone()
+                    if not payout:
+                        return resp(404, {'error': 'Заявка не найдена'}, headers_common)
+                    if payout[3] != 'pending':
+                        return resp(400, {'error': 'Заявка уже обработана'}, headers_common)
+
+                    if payout[1] == 'AZVOX':
+                        if not AZVOX_PAYOUT_ACCOUNT or not AZVOX_PAYOUT_API_ID or not AZVOX_PAYOUT_API_PASS:
+                            return resp(500, {'error': 'AZVOX выплаты не настроены'}, headers_common)
+                        try:
+                            result = azvox_transfer(payout[2], float(payout[0]), f'Выплата #{payout_id}')
+                        except Exception as e:
+                            cur.execute(
+                                f"UPDATE {SCHEMA}.payouts SET status = 'rejected', error = %s WHERE id = %s",
+                                (str(e), payout_id),
+                            )
+                            conn.commit()
+                            return resp(502, {'error': 'Ошибка связи с AZVOX'}, headers_common)
+
+                        if result.get('status') == 'ok':
+                            history_id = result.get('data', {}).get('history_operation_id')
+                            cur.execute(
+                                f"UPDATE {SCHEMA}.payouts SET status = 'completed', external_id = %s WHERE id = %s",
+                                (str(history_id), payout_id),
+                            )
+                        else:
+                            error_msg = result.get('error', 'Неизвестная ошибка AZVOX')
+                            cur.execute(
+                                f"UPDATE {SCHEMA}.payouts SET status = 'rejected', error = %s WHERE id = %s",
+                                (error_msg, payout_id),
+                            )
+                            conn.commit()
+                            return resp(400, {'error': f'AZVOX: {error_msg}'}, headers_common)
+                    else:
+                        cur.execute(f"UPDATE {SCHEMA}.payouts SET status = 'completed' WHERE id = %s", (payout_id,))
+                else:
+                    cur.execute(f"UPDATE {SCHEMA}.payouts SET status = %s WHERE id = %s", (new_status, payout_id))
+
                 cur.execute(
                     f"UPDATE {SCHEMA}.admin_notifications SET is_read = TRUE "
                     f"WHERE type = 'payout_request' AND entity_id = %s",

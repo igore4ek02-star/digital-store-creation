@@ -9,4 +9,5 @@ export const API = {
   ads: `${funcUrls.account}?resource=ads`,
   support: `${funcUrls.account}?resource=support`,
   wallet: `${funcUrls.account}?resource=wallet`,
+  paymentCreate: `${funcUrls.account}?resource=payment&action=create-order`,
 };

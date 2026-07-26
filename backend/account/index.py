@@ -1,8 +1,18 @@
 import json
 import os
+import base64
+import hashlib
+import urllib.request
+import urllib.parse
 import psycopg2
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 'public')
+
+AZVOX_SHOP_ID = os.environ.get('AZVOX_SHOP_ID', '')
+AZVOX_SECRET_KEY = os.environ.get('AZVOX_SECRET_KEY', '')
+AZVOX_PAYOUT_ACCOUNT = os.environ.get('AZVOX_PAYOUT_ACCOUNT', '')
+AZVOX_PAYOUT_API_ID = os.environ.get('AZVOX_PAYOUT_API_ID', '')
+AZVOX_PAYOUT_API_PASS = os.environ.get('AZVOX_PAYOUT_API_PASS', '')
 
 
 def get_conn():
@@ -283,6 +293,129 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
     return resp(400, {'error': 'Неизвестное действие'}, headers_common)
 
 
+def azvox_sign(parts: list) -> str:
+    joined = ':'.join(str(p) for p in parts)
+    return hashlib.sha256(joined.encode('utf-8')).hexdigest().upper()
+
+
+def build_azvox_form(order_id: int, amount: float, description: str) -> dict:
+    m_shop = AZVOX_SHOP_ID
+    m_orderid = order_id
+    m_amount = f"{amount:.2f}"
+    m_curr = 'RUB'
+    m_desc = base64.b64encode(description.encode('utf-8')).decode('ascii')
+    m_params = base64.b64encode(json.dumps(False).encode('utf-8')).decode('ascii')
+    sign = azvox_sign([m_shop, m_orderid, m_amount, m_curr, m_desc, m_params, AZVOX_SECRET_KEY])
+    return {
+        'm_shop': m_shop,
+        'm_orderid': m_orderid,
+        'm_amount': m_amount,
+        'm_curr': m_curr,
+        'm_desc': m_desc,
+        'm_params': m_params,
+        'm_sign': sign,
+        'payUrl': 'https://azvox.cash/pay/',
+    }
+
+
+def handle_payment_create(event, cur, conn, headers_common, token):
+    body = json.loads(event.get('body') or '{}')
+    product_id = body.get('productId')
+    email = (body.get('email') or '').strip().lower()
+    method = body.get('method', 'AZVOX')
+
+    if not product_id or '@' not in email:
+        return resp(400, {'error': 'Укажите товар и корректный e-mail'}, headers_common)
+
+    cur.execute(
+        f"SELECT id, title, price FROM {SCHEMA}.products WHERE id = %s AND status = 'approved'",
+        (product_id,),
+    )
+    product = cur.fetchone()
+    if not product:
+        return resp(404, {'error': 'Товар не найден'}, headers_common)
+
+    user_row = get_user(cur, token)
+    user_id = user_row[0] if user_row else None
+
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.orders (product_id, user_id, email, method, amount, status) "
+        f"VALUES (%s, %s, %s, %s, %s, 'pending') RETURNING id",
+        (product_id, user_id, email, method, product[2]),
+    )
+    order_id = cur.fetchone()[0]
+    conn.commit()
+
+    if method == 'AZVOX':
+        if not AZVOX_SHOP_ID or not AZVOX_SECRET_KEY:
+            return resp(500, {'error': 'AZVOX не настроен. Обратитесь к администратору'}, headers_common)
+        form = build_azvox_form(order_id, float(product[2]), product[1])
+        return resp(200, {'orderId': order_id, 'provider': 'AZVOX', 'form': form}, headers_common)
+
+    return resp(400, {'error': 'Этот способ оплаты скоро будет доступен'}, headers_common)
+
+
+def handle_azvox_status(event, cur, conn):
+    text_headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/plain'}
+    body = event.get('body') or ''
+    if event.get('isBase64Encoded'):
+        body = base64.b64decode(body).decode('utf-8')
+    if event.get('httpMethod') == 'GET':
+        params = event.get('queryStringParameters') or {}
+    else:
+        params = dict(urllib.parse.parse_qsl(body))
+
+    required = ['m_status', 'm_shop', 'm_orderid', 'm_operation_id', 'm_sign']
+    if not all(k in params for k in required):
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    arHash = [
+        params.get('m_status', ''),
+        params.get('m_operation_id', ''),
+        params.get('m_operation_amount', ''),
+        params.get('m_operation_curr', ''),
+        params.get('m_operation_timestamp', ''),
+        params.get('m_wallet', ''),
+        params.get('m_shop', ''),
+        params.get('m_orderid', ''),
+        params.get('m_amount', ''),
+        params.get('m_curr', ''),
+        params.get('m_desc', ''),
+        params.get('m_params', ''),
+        AZVOX_SECRET_KEY,
+    ]
+    sign_hash = azvox_sign(arHash)
+
+    m_status = params.get('m_status')
+    m_shop_ok = str(params.get('m_shop')) == str(AZVOX_SHOP_ID)
+
+    if params.get('m_sign') != sign_hash or not m_shop_ok or m_status not in ('success', 'fail'):
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    order_id = int(params.get('m_orderid'))
+    operation_id = params.get('m_operation_id')
+
+    cur.execute(f"SELECT id, status, amount, user_id FROM {SCHEMA}.orders WHERE id = %s", (order_id,))
+    order = cur.fetchone()
+    if not order:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    if order[1] == 'pending':
+        new_status = 'paid' if m_status == 'success' else 'failed'
+        cur.execute(
+            f"UPDATE {SCHEMA}.orders SET status = %s, external_id = %s WHERE id = %s",
+            (new_status, operation_id, order_id),
+        )
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, order_id, method, amount, status, external_id) "
+            f"VALUES ('order', %s, %s, 'AZVOX', %s, %s, %s)",
+            (order[3], order_id, order[2], new_status, operation_id),
+        )
+        conn.commit()
+
+    return {'statusCode': 200, 'headers': text_headers, 'body': f'{order_id}|success'}
+
+
 def handler(event: dict, context):
     """Личный кабинет пользователя: онлайн-присутствие, заказ рекламы, обращения в поддержку, баланс (пополнение/вывод). Раздел выбирается параметром resource"""
     method = event.get('httpMethod', 'GET')
@@ -310,6 +443,13 @@ def handler(event: dict, context):
             return handle_support(event, cur, conn, method, headers_common, token, params)
         if resource == 'wallet':
             return handle_wallet(event, cur, conn, method, headers_common, token)
+        if resource == 'payment':
+            payment_action = params.get('action', '')
+            if payment_action == 'create-order' and method == 'POST':
+                return handle_payment_create(event, cur, conn, headers_common, token)
+            if payment_action == 'azvox-status':
+                return handle_azvox_status(event, cur, conn)
+            return resp(400, {'error': 'Неизвестное действие оплаты'}, headers_common)
         return resp(400, {'error': 'Не указан или неизвестен resource'}, headers_common)
     finally:
         cur.close()
