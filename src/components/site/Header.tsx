@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/hooks/use-auth';
 
 const NAV = [
   { label: 'Каталог', href: '#catalog' },
@@ -12,6 +13,7 @@ const NAV = [
 const Header = () => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -51,10 +53,17 @@ const Header = () => {
         <div className="ml-auto flex items-center gap-3">
           <Link
             to="/admin"
-            className="hidden items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan md:inline-flex"
+            className="hidden items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan lg:inline-flex"
           >
             <span className="h-[7px] w-[7px] rounded-full bg-brand-green shadow-[0_0_0_3px_hsl(var(--brand-green)/0.3)]" />
             Админка
+          </Link>
+          <Link
+            to={user ? '/cabinet' : '/auth'}
+            className="hidden items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan md:inline-flex"
+          >
+            <Icon name={user ? 'CircleUser' : 'LogIn'} size={15} />
+            {user ? 'Кабинет' : 'Войти'}
           </Link>
           <a
             href="#catalog"
@@ -89,8 +98,16 @@ const Header = () => {
               </button>
             ))}
             <Link
+              to={user ? '/cabinet' : '/auth'}
+              onClick={() => setOpen(false)}
+              className="mt-1 rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-foreground"
+            >
+              {user ? 'Личный кабинет' : 'Вход и регистрация'}
+            </Link>
+            <Link
               to="/admin"
-              className="mt-1 rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-brand-cyan"
+              onClick={() => setOpen(false)}
+              className="rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-brand-cyan"
             >
               Админка
             </Link>
