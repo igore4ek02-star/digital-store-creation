@@ -1,16 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
-import { PRODUCTS, CATEGORIES, formatPrice, Product } from './products';
+import { CATEGORIES, formatPrice, Product, fetchProducts } from './products';
 import BuyDialog from './BuyDialog';
 
 const Catalog = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<string>('Все');
   const [selected, setSelected] = useState<Product | null>(null);
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    fetchProducts()
+      .then(setProducts)
+      .finally(() => setLoading(false));
+  }, []);
+
   const list = useMemo(
-    () => (active === 'Все' ? PRODUCTS : PRODUCTS.filter((p) => p.category === active)),
-    [active],
+    () => (active === 'Все' ? products : products.filter((p) => p.category === active)),
+    [active, products],
   );
 
   const buy = (p: Product) => {
@@ -51,53 +60,63 @@ const Catalog = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {list.map((p) => (
-          <article
-            key={p.id}
-            className="group flex animate-fade-in flex-col rounded-2xl border border-border bg-card p-5 transition-colors hover:border-brand-cyan/50"
-          >
-            <div className="mb-4 flex items-start justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-cyan/12 text-brand-cyan transition-colors group-hover:bg-brand-cyan/20">
-                <Icon name={p.icon} size={24} />
-              </span>
-              {p.tag && (
-                <span className="rounded-md bg-primary/15 px-2.5 py-1 font-head text-[11px] font-semibold uppercase tracking-wide text-primary">
-                  {p.tag}
+      {loading ? (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-64 animate-pulse rounded-2xl border border-border bg-card" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {list.map((p) => (
+            <article
+              key={p.id}
+              className="group flex animate-fade-in flex-col rounded-2xl border border-border bg-card p-5 transition-colors hover:border-brand-cyan/50"
+            >
+              <Link to={`/product/${p.slug}`} className="mb-4 flex items-start justify-between">
+                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-cyan/12 text-brand-cyan transition-colors group-hover:bg-brand-cyan/20">
+                  <Icon name={p.icon} size={24} />
                 </span>
-              )}
-            </div>
-            <h3 className="font-head text-lg font-semibold uppercase leading-snug tracking-wide text-foreground">
-              {p.title}
-            </h3>
-            <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">{p.desc}</p>
+                {p.tag && (
+                  <span className="rounded-md bg-primary/15 px-2.5 py-1 font-head text-[11px] font-semibold uppercase tracking-wide text-primary">
+                    {p.tag}
+                  </span>
+                )}
+              </Link>
+              <Link to={`/product/${p.slug}`}>
+                <h3 className="font-head text-lg font-semibold uppercase leading-snug tracking-wide text-foreground transition-colors hover:text-brand-cyan">
+                  {p.title}
+                </h3>
+              </Link>
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">{p.desc}</p>
 
-            <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1 text-primary">
-                <Icon name="Star" size={13} fallback="Star" />
-                {p.rating}
-              </span>
-              <span className="flex items-center gap-1">
-                <Icon name="Download" size={13} />
-                {p.sales} продаж
-              </span>
-            </div>
+              <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1 text-primary">
+                  <Icon name="Star" size={13} fallback="Star" />
+                  {p.rating}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Icon name="Download" size={13} />
+                  {p.sales} продаж
+                </span>
+              </div>
 
-            <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
-              <span className="font-head text-xl font-bold text-foreground">
-                {formatPrice(p.price)}
-              </span>
-              <button
-                onClick={() => buy(p)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
-              >
-                <Icon name="ShoppingCart" size={15} />
-                Купить
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
+              <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
+                <span className="font-head text-xl font-bold text-foreground">
+                  {formatPrice(p.price)}
+                </span>
+                <button
+                  onClick={() => buy(p)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+                >
+                  <Icon name="ShoppingCart" size={15} />
+                  Купить
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       <BuyDialog product={selected} open={open} onOpenChange={setOpen} />
     </section>

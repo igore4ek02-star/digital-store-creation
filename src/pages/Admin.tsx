@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { PRODUCTS, formatPrice, Product } from '@/components/site/products';
+import { formatPrice, Product, fetchProducts } from '@/components/site/products';
+import { API } from '@/lib/api';
 
 interface Order {
   id: string;
@@ -41,13 +42,26 @@ const ORDERS: Order[] = [
   { id: '#10424', product: 'Скрипт доски объявлений', email: 'roman@bk.ru', method: 'ЮMoney', amount: 1290, status: 'Возврат', date: '23.07.2026' },
 ];
 
-const emptyForm = { title: '', desc: '', price: '', category: 'Скрипты', icon: 'FileCode2' };
+const emptyForm = { title: '', desc: '', fullDescription: '', price: '', category: 'Скрипты', icon: 'FileCode2' };
 
 const Admin = () => {
-  const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    fetchProducts()
+      .then(setProducts)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
 
   const openNew = () => {
     setEditing(null);
@@ -57,46 +71,57 @@ const Admin = () => {
 
   const openEdit = (p: Product) => {
     setEditing(p);
-    setForm({ title: p.title, desc: p.desc, price: String(p.price), category: p.category, icon: p.icon });
+    setForm({
+      title: p.title,
+      desc: p.desc,
+      fullDescription: p.fullDescription || '',
+      price: String(p.price),
+      category: p.category,
+      icon: p.icon,
+    });
     setDialogOpen(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.title.trim() || !form.price) {
       toast.error('Заполните название и цену');
       return;
     }
-    if (editing) {
-      setProducts((prev) =>
-        prev.map((p) =>
-          p.id === editing.id
-            ? { ...p, title: form.title, desc: form.desc, price: Number(form.price), category: form.category as Product['category'], icon: form.icon }
-            : p,
-        ),
-      );
-      toast.success('Товар обновлён');
-    } else {
-      setProducts((prev) => [
-        {
-          id: Date.now(),
-          title: form.title,
-          desc: form.desc,
-          price: Number(form.price),
-          category: form.category as Product['category'],
-          icon: form.icon,
-          rating: 5,
-          sales: 0,
-        },
-        ...prev,
-      ]);
-      toast.success('Товар добавлен');
+    setSaving(true);
+    try {
+      const payload = {
+        title: form.title,
+        desc: form.desc,
+        fullDescription: form.fullDescription,
+        price: Number(form.price),
+        category: form.category,
+        icon: form.icon,
+      };
+      const res = await fetch(API.products, {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editing ? { ...payload, id: editing.id } : payload),
+      });
+      if (!res.ok) {
+        toast.error('Не удалось сохранить товар');
+        return;
+      }
+      toast.success(editing ? 'Товар обновлён' : 'Товар добавлен');
+      setDialogOpen(false);
+      load();
+    } finally {
+      setSaving(false);
     }
-    setDialogOpen(false);
   };
 
-  const remove = (id: number) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
+  const remove = async (id: number) => {
+    const res = await fetch(`${API.products}?id=${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      toast.error('Не удалось удалить товар');
+      return;
+    }
     toast.success('Товар удалён');
+    setProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
   const revenue = ORDERS.filter((o) => o.status === 'Оплачен').reduce((s, o) => s + o.amount, 0);
@@ -170,58 +195,62 @@ const Admin = () => {
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Товар</TableHead>
-                    <TableHead className="hidden md:table-cell">Категория</TableHead>
-                    <TableHead>Цена</TableHead>
-                    <TableHead className="hidden sm:table-cell">Продаж</TableHead>
-                    <TableHead className="text-right">Действия</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {products.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-cyan/12 text-brand-cyan">
-                            <Icon name={p.icon} size={18} />
-                          </span>
-                          <span className="font-medium text-foreground">{p.title}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden text-muted-foreground md:table-cell">
-                        {p.category}
-                      </TableCell>
-                      <TableCell className="font-head font-semibold text-foreground">
-                        {formatPrice(p.price)}
-                      </TableCell>
-                      <TableCell className="hidden text-muted-foreground sm:table-cell">
-                        {p.sales}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => openEdit(p)}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
-                            aria-label="Редактировать"
-                          >
-                            <Icon name="Pencil" size={15} />
-                          </button>
-                          <button
-                            onClick={() => remove(p.id)}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
-                            aria-label="Удалить"
-                          >
-                            <Icon name="Trash2" size={15} />
-                          </button>
-                        </div>
-                      </TableCell>
+              {loading ? (
+                <div className="h-40 animate-pulse" />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Товар</TableHead>
+                      <TableHead className="hidden md:table-cell">Категория</TableHead>
+                      <TableHead>Цена</TableHead>
+                      <TableHead className="hidden sm:table-cell">Продаж</TableHead>
+                      <TableHead className="text-right">Действия</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {products.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-cyan/12 text-brand-cyan">
+                              <Icon name={p.icon} size={18} />
+                            </span>
+                            <span className="font-medium text-foreground">{p.title}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden text-muted-foreground md:table-cell">
+                          {p.category}
+                        </TableCell>
+                        <TableCell className="font-head font-semibold text-foreground">
+                          {formatPrice(p.price)}
+                        </TableCell>
+                        <TableCell className="hidden text-muted-foreground sm:table-cell">
+                          {p.sales}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => openEdit(p)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
+                              aria-label="Редактировать"
+                            >
+                              <Icon name="Pencil" size={15} />
+                            </button>
+                            <button
+                              onClick={() => remove(p.id)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-destructive/50 hover:text-destructive"
+                              aria-label="Удалить"
+                            >
+                              <Icon name="Trash2" size={15} />
+                            </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </div>
           </TabsContent>
 
@@ -277,12 +306,22 @@ const Admin = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="p-desc">Описание</Label>
+              <Label htmlFor="p-desc">Краткое описание</Label>
               <Textarea
                 id="p-desc"
                 value={form.desc}
                 onChange={(e) => setForm({ ...form, desc: e.target.value })}
-                placeholder="Краткое описание товара"
+                placeholder="Краткое описание товара для карточки"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="p-full">Полное описание (на странице товара)</Label>
+              <Textarea
+                id="p-full"
+                value={form.fullDescription}
+                onChange={(e) => setForm({ ...form, fullDescription: e.target.value })}
+                placeholder="Подробное описание товара"
+                className="min-h-24"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -321,7 +360,8 @@ const Admin = () => {
             </button>
             <button
               onClick={save}
-              className="rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+              disabled={saving}
+              className="rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
             >
               Сохранить
             </button>

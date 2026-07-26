@@ -24,7 +24,9 @@ const Auth = () => {
   const [logPass, setLogPass] = useState('');
   const [logErr, setLogErr] = useState<Record<string, string>>({});
 
-  const submitRegister = (e: React.FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const submitRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (regName.trim().length < 2) errs.name = 'Укажите имя';
@@ -32,19 +34,31 @@ const Auth = () => {
     if (regPass.length < 6) errs.pass = 'Минимум 6 символов';
     setRegErr(errs);
     if (Object.keys(errs).length) return;
-    register(regName.trim(), regEmail.trim(), regPass);
+    setSubmitting(true);
+    const error = await register(regName.trim(), regEmail.trim(), regPass);
+    setSubmitting(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
     toast.success('Аккаунт создан', { description: 'Добро пожаловать в Php-Skript!' });
     navigate('/cabinet');
   };
 
-  const submitLogin = (e: React.FormEvent) => {
+  const submitLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!emailRe.test(logEmail)) errs.email = 'Некорректный e-mail';
     if (logPass.length < 6) errs.pass = 'Минимум 6 символов';
     setLogErr(errs);
     if (Object.keys(errs).length) return;
-    login(logEmail.trim(), logPass);
+    setSubmitting(true);
+    const error = await login(logEmail.trim(), logPass);
+    setSubmitting(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
     toast.success('Вход выполнен');
     navigate('/cabinet');
   };
@@ -104,7 +118,8 @@ const Auth = () => {
               </div>
               <button
                 type="submit"
-                className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+                disabled={submitting}
+                className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
               >
                 <Icon name="UserPlus" size={18} />
                 Зарегистрироваться
@@ -144,7 +159,8 @@ const Auth = () => {
               </div>
               <button
                 type="submit"
-                className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+                disabled={submitting}
+                className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
               >
                 <Icon name="LogIn" size={18} />
                 Войти

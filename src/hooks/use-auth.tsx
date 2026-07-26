@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { API } from '@/lib/api';
 
 export interface AuthUser {
   name: string;
@@ -9,65 +10,85 @@ export interface AuthUser {
 
 interface AuthContextValue {
   user: AuthUser | null;
-  register: (name: string, email: string, password: string) => void;
-  login: (email: string, password: string) => boolean;
+  loading: boolean;
+  register: (name: string, email: string, password: string) => Promise<string | null>;
+  login: (email: string, password: string) => Promise<string | null>;
   logout: () => void;
 }
 
-const STORAGE_KEY = 'php-skript-user';
+const TOKEN_KEY = 'php-skript-token';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchMe = async (token: string) => {
+    try {
+      const res = await fetch(API.auth, { headers: { 'X-Authorization': `Bearer ${token}` } });
+      if (!res.ok) {
+        localStorage.removeItem(TOKEN_KEY);
+        setUser(null);
+        return;
+      }
+      const data = await res.json();
+      setUser(data.user);
+    } catch {
+      setUser(null);
+    }
+  };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {
-      /* ignore */
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) {
+      fetchMe(token).finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, []);
 
-  const persist = (u: AuthUser | null) => {
-    setUser(u);
-    if (u) localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-    else localStorage.removeItem(STORAGE_KEY);
-  };
-
-  const register = (name: string, email: string) => {
-    persist({
-      name,
-      email,
-      balance: 0,
-      createdAt: new Date().toLocaleDateString('ru-RU'),
+  const register = async (name: string, email: string, password: string) => {
+    const res = await fetch(API.auth, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'register', name, email, password }),
     });
+    const data = await res.json();
+    if (!res.ok) return data.error || 'Ошибка регистрации';
+    localStorage.setItem(TOKEN_KEY, data.token);
+    setUser(data.user);
+    return null;
   };
 
-  const login = (email: string) => {
-    // v1: демо-вход — восстанавливаем/создаём профиль по e-mail
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as AuthUser;
-      if (saved.email === email) {
-        persist(saved);
-        return true;
-      }
+  const login = async (email: string, password: string) => {
+    const res = await fetch(API.auth, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) return data.error || 'Ошибка входа';
+    localStorage.setItem(TOKEN_KEY, data.token);
+    setUser(data.user);
+    return null;
+  };
+
+  const logout = () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) {
+      fetch(API.auth, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'logout' }),
+      }).catch(() => {});
     }
-    persist({
-      name: email.split('@')[0],
-      email,
-      balance: 0,
-      createdAt: new Date().toLocaleDateString('ru-RU'),
-    });
-    return true;
+    localStorage.removeItem(TOKEN_KEY);
+    setUser(null);
   };
-
-  const logout = () => persist(null);
 
   return (
-    <AuthContext.Provider value={{ user, register, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, register, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -78,3 +99,5 @@ export const useAuth = () => {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 };
+
+export const getAuthToken = () => localStorage.getItem(TOKEN_KEY);

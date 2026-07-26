@@ -1,0 +1,17 @@
+INSERT INTO product_images (product_id, image_url, sort_order) VALUES
+(1, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/fa4eb729-eb45-4dae-83ed-ea7c6149747e.jpg', 0),
+(1, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/b670e5d2-e359-4db0-9db3-aa1b88cd36cd.jpg', 1),
+(2, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/f9379359-6664-4704-a77f-a2cd0d5a8df7.jpg', 0),
+(2, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/b106f976-d7b4-4a2e-8d96-fedb2c77c200.jpg', 1),
+(3, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/1ac6c8e4-2380-4e42-b056-b3c67219e0d4.jpg', 0),
+(3, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/c4ca3f90-fda1-4d14-9691-5d64c211b013.jpg', 1),
+(4, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/d6ff5adb-f593-4a86-8574-156b0a5907d2.jpg', 0),
+(4, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/4a1ce001-ad87-4c23-a4c6-e477e4afc68e.jpg', 1),
+(5, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/1a4476c0-6730-4c18-be8d-b5ef06d05867.jpg', 0),
+(5, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/c39d6ab9-4343-4feb-8ab3-6d02fe477f04.jpg', 1),
+(6, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/00026888-f46b-44c1-abb2-68c79cbf5086.jpg', 0),
+(6, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/ba9dd9be-955c-4273-87a8-69c317a01f7b.jpg', 1),
+(7, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/f63f3f73-862f-4a82-9d4d-318c8b5e9ed5.jpg', 0),
+(7, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/dbf88f83-73a5-40dc-98f6-e26801bde798.jpg', 1),
+(8, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/8eca85e6-1059-49eb-838f-27a93a231de5.jpg', 0),
+(8, 'https://cdn.poehali.dev/projects/8c92fcf7-c799-4211-8864-661f0f4257b4/files/cc253844-be5e-4bc4-9fba-9b664822e10e.jpg', 1);
