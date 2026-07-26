@@ -20,6 +20,14 @@ import ReviewsPage from "./pages/ReviewsPage";
 import NewsPage from "./pages/NewsPage";
 import Offer from "./pages/Offer";
 import NotFound from "./pages/NotFound";
+import OnlineWidget from "@/components/site/OnlineWidget";
+import AdminActivity from "./pages/admin/Activity";
+import AdminFinance from "./pages/admin/Finance";
+import AdminAuthHistory from "./pages/admin/AuthHistory";
+import AdminPayouts from "./pages/admin/Payouts";
+import AdminUsers from "./pages/admin/Users";
+import AdminModeration from "./pages/admin/Moderation";
+import AdminSupport from "./pages/admin/Support";
 
 const queryClient = new QueryClient();
 
@@ -30,9 +38,17 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <BrowserRouter>
+          <OnlineWidget />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/moderation" element={<AdminModeration />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/activity" element={<AdminActivity />} />
+            <Route path="/admin/finance" element={<AdminFinance />} />
+            <Route path="/admin/auth-history" element={<AdminAuthHistory />} />
+            <Route path="/admin/payouts" element={<AdminPayouts />} />
+            <Route path="/admin/support" element={<AdminSupport />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/cabinet" element={<Cabinet />} />
             <Route path="/product/:slug" element={<Product />} />

@@ -7,9 +7,15 @@
       "expectedStatus": 200
     },
     {
-      "name": "GET price per day",
+      "name": "GET без resource",
       "method": "GET",
       "path": "/",
+      "expectedStatus": 400
+    },
+    {
+      "name": "GET presence (публичный онлайн-счётчик)",
+      "method": "GET",
+      "path": "/?resource=presence",
       "expectedStatus": 200
     }
   ]

@@ -17,6 +17,17 @@ def resp(status: int, data, headers: dict) -> dict:
     }
 
 
+def get_user(cur, token: str):
+    if not token:
+        return None
+    cur.execute(
+        f"SELECT u.id, u.is_admin FROM {SCHEMA}.sessions s JOIN {SCHEMA}.users u ON u.id = s.user_id "
+        f"WHERE s.token = %s AND s.expires_at > now()",
+        (token,),
+    )
+    return cur.fetchone()
+
+
 def product_dict(row) -> dict:
     return {
         'id': row[0],
@@ -31,11 +42,12 @@ def product_dict(row) -> dict:
         'rating': float(row[9]),
         'sales': row[10],
         'coverImage': row[11],
+        'status': row[12] if len(row) > 12 else 'approved',
     }
 
 
 def handler(event: dict, context):
-    """Каталог товаров: список, карточка товара по slug (с галереей), CRUD в админке"""
+    """Каталог товаров: список (только одобренные), карточка товара по slug (с галереей), CRUD в админке, предложение товара пользователем на модерацию"""
     method = event.get('httpMethod', 'GET')
     headers_common = {
         'Access-Control-Allow-Origin': '*',
@@ -55,7 +67,7 @@ def handler(event: dict, context):
             if slug:
                 cur.execute(
                     f"SELECT id, title, slug, description, full_description, price, category, "
-                    f"icon, tag, rating, sales, cover_image FROM {SCHEMA}.products WHERE slug = %s",
+                    f"icon, tag, rating, sales, cover_image, status FROM {SCHEMA}.products WHERE slug = %s",
                     (slug,),
                 )
                 row = cur.fetchone()
@@ -71,24 +83,34 @@ def handler(event: dict, context):
 
             cur.execute(
                 f"SELECT id, title, slug, description, full_description, price, category, "
-                f"icon, tag, rating, sales, cover_image FROM {SCHEMA}.products ORDER BY id"
+                f"icon, tag, rating, sales, cover_image, status FROM {SCHEMA}.products "
+                f"WHERE status = 'approved' ORDER BY id"
             )
             products = [product_dict(r) for r in cur.fetchall()]
             return resp(200, {'products': products}, headers_common)
 
         body = json.loads(event.get('body') or '{}')
+        token = (event.get('headers') or {}).get('X-Authorization', '').replace('Bearer ', '').strip()
 
         if method == 'POST':
+            user_row = get_user(cur, token)
+            is_admin = bool(user_row and user_row[1])
+            seller_id = user_row[0] if user_row else None
+
             slug_base = body['title'].lower().replace(' ', '-').replace('«', '').replace('»', '')
             slug = ''.join(c for c in slug_base if c.isalnum() or c == '-') or f"product-{os.urandom(3).hex()}"
+            status = 'approved' if is_admin else 'pending'
+            if not is_admin and not seller_id:
+                return resp(401, {'error': 'Войдите в аккаунт, чтобы предложить товар'}, headers_common)
+
             cur.execute(
                 f"INSERT INTO {SCHEMA}.products (title, slug, description, full_description, price, "
-                f"category, icon, tag, cover_image) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                f"RETURNING id, title, slug, description, full_description, price, category, icon, tag, rating, sales, cover_image",
+                f"category, icon, tag, cover_image, seller_id, status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                f"RETURNING id, title, slug, description, full_description, price, category, icon, tag, rating, sales, cover_image, status",
                 (
                     body['title'], slug, body.get('desc', ''), body.get('fullDescription', ''),
                     body['price'], body['category'], body.get('icon', 'Package'), body.get('tag'),
-                    body.get('coverImage'),
+                    body.get('coverImage'), seller_id, status,
                 ),
             )
             row = cur.fetchone()
@@ -106,7 +128,7 @@ def handler(event: dict, context):
             cur.execute(
                 f"UPDATE {SCHEMA}.products SET title=%s, description=%s, full_description=%s, "
                 f"price=%s, category=%s, icon=%s, tag=%s WHERE id=%s "
-                f"RETURNING id, title, slug, description, full_description, price, category, icon, tag, rating, sales, cover_image",
+                f"RETURNING id, title, slug, description, full_description, price, category, icon, tag, rating, sales, cover_image, status",
                 (
                     body['title'], body.get('desc', ''), body.get('fullDescription', ''),
                     body['price'], body['category'], body.get('icon', 'Package'), body.get('tag'), pid,

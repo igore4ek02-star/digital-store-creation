@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { API } from '@/lib/api';
+import AdOrderDialog from './AdOrderDialog';
 
 const PILLS = [
   { icon: 'Link2', title: 'CMS интернет-магазина', sub: 'php-skript.ru · 3 490 ₽' },
@@ -8,8 +10,23 @@ const PILLS = [
   { icon: 'ShieldCheck', title: 'Плагин приёма платежей', sub: 'AZVOX · ЮMoney · 590 ₽' },
 ];
 
+interface AdItem {
+  id: number;
+  text: string;
+  link: string | null;
+}
+
 const Hero = () => {
   const [query, setQuery] = useState('');
+  const [ads, setAds] = useState<AdItem[]>([]);
+  const [adDialogOpen, setAdDialogOpen] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API.ads}&active=1`)
+      .then((r) => r.json())
+      .then((d) => setAds(d.ads || []))
+      .catch(() => {});
+  }, []);
 
   const goCatalog = () => {
     document.querySelector('#catalog')?.scrollIntoView({ behavior: 'smooth' });
@@ -45,14 +62,32 @@ const Hero = () => {
           ))}
           <div className="hidden items-center justify-center md:flex">
             <button
-              onClick={goCatalog}
-              aria-label="Все товары"
+              onClick={() => setAdDialogOpen(true)}
+              aria-label="Заказать рекламу"
+              title="Заказать текстовую рекламу"
               className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-green text-primary-foreground shadow-[0_8px_22px_-8px_hsl(var(--brand-green)/0.8)] transition-transform hover:scale-105"
             >
               <Icon name="Plus" size={26} />
             </button>
           </div>
         </div>
+
+        {ads.length > 0 && (
+          <div className="animate-rise flex flex-col gap-2.5 md:flex-row md:flex-wrap">
+            {ads.map((ad) => (
+              <a
+                key={ad.id}
+                href={ad.link || '#top'}
+                target={ad.link ? '_blank' : undefined}
+                rel={ad.link ? 'noopener noreferrer' : undefined}
+                className="flex items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-sm text-foreground transition-colors hover:border-primary/60"
+              >
+                <Icon name="Megaphone" size={15} className="shrink-0 text-primary" />
+                <span className="truncate">{ad.text}</span>
+              </a>
+            ))}
+          </div>
+        )}
 
         {/* search */}
         <form
@@ -122,6 +157,8 @@ const Hero = () => {
           </div>
         </div>
       </div>
+
+      <AdOrderDialog open={adDialogOpen} onOpenChange={setAdDialogOpen} />
     </section>
   );
 };

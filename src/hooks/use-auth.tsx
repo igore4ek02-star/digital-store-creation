@@ -2,10 +2,12 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { API } from '@/lib/api';
 
 export interface AuthUser {
+  id: number;
   name: string;
   email: string;
   balance: number;
   createdAt: string;
+  isAdmin: boolean;
 }
 
 interface AuthContextValue {
@@ -14,6 +16,7 @@ interface AuthContextValue {
   register: (name: string, email: string, password: string) => Promise<string | null>;
   login: (email: string, password: string) => Promise<string | null>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const TOKEN_KEY = 'php-skript-token';
@@ -87,8 +90,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) await fetchMe(token);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, register, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, register, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
