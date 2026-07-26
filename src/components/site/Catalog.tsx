@@ -1,0 +1,107 @@
+import { useMemo, useState } from 'react';
+import Icon from '@/components/ui/icon';
+import { PRODUCTS, CATEGORIES, formatPrice, Product } from './products';
+import BuyDialog from './BuyDialog';
+
+const Catalog = () => {
+  const [active, setActive] = useState<string>('Все');
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const list = useMemo(
+    () => (active === 'Все' ? PRODUCTS : PRODUCTS.filter((p) => p.category === active)),
+    [active],
+  );
+
+  const buy = (p: Product) => {
+    setSelected(p);
+    setOpen(true);
+  };
+
+  return (
+    <section id="catalog" className="mx-auto max-w-7xl px-5 py-20 md:px-8 md:py-28">
+      <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="mb-3 font-head text-xs font-medium uppercase tracking-[0.14em] text-brand-cyan">
+            Каталог скриптов
+          </p>
+          <h2 className="max-w-2xl font-head text-3xl font-bold uppercase leading-tight tracking-tight text-foreground md:text-5xl">
+            Цифровые товары для сайтов
+          </h2>
+          <p className="mt-3 max-w-xl text-muted-foreground">
+            PHP-скрипты, шаблоны, плагины и готовые проекты. Купите, скачайте и запустите за
+            минуты.
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-8 flex flex-wrap gap-2">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c}
+            onClick={() => setActive(c)}
+            className={`rounded-full border px-4 py-2 font-head text-sm font-medium uppercase tracking-wide transition-colors ${
+              active === c
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground hover:border-brand-cyan/50 hover:text-brand-cyan'
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {list.map((p) => (
+          <article
+            key={p.id}
+            className="group flex animate-fade-in flex-col rounded-2xl border border-border bg-card p-5 transition-colors hover:border-brand-cyan/50"
+          >
+            <div className="mb-4 flex items-start justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-cyan/12 text-brand-cyan transition-colors group-hover:bg-brand-cyan/20">
+                <Icon name={p.icon} size={24} />
+              </span>
+              {p.tag && (
+                <span className="rounded-md bg-primary/15 px-2.5 py-1 font-head text-[11px] font-semibold uppercase tracking-wide text-primary">
+                  {p.tag}
+                </span>
+              )}
+            </div>
+            <h3 className="font-head text-lg font-semibold uppercase leading-snug tracking-wide text-foreground">
+              {p.title}
+            </h3>
+            <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">{p.desc}</p>
+
+            <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1 text-primary">
+                <Icon name="Star" size={13} fallback="Star" />
+                {p.rating}
+              </span>
+              <span className="flex items-center gap-1">
+                <Icon name="Download" size={13} />
+                {p.sales} продаж
+              </span>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
+              <span className="font-head text-xl font-bold text-foreground">
+                {formatPrice(p.price)}
+              </span>
+              <button
+                onClick={() => buy(p)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+              >
+                <Icon name="ShoppingCart" size={15} />
+                Купить
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <BuyDialog product={selected} open={open} onOpenChange={setOpen} />
+    </section>
+  );
+};
+
+export default Catalog;
