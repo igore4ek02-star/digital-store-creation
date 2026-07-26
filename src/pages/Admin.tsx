@@ -19,11 +19,29 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { formatPrice, Product, fetchProducts } from '@/components/site/products';
+import { formatPrice, Product } from '@/components/site/products';
 import { API } from '@/lib/api';
 import AdminGuard from '@/components/site/AdminGuard';
+import ProductMediaDialog from '@/components/site/ProductMediaDialog';
+import { getAuthToken } from '@/hooks/use-auth';
 
 const emptyForm = { title: '', desc: '', fullDescription: '', price: '', category: 'Скрипты', icon: 'FileCode2' };
+
+const statusLabel = (s: string) =>
+  ({ approved: 'Опубликован', pending: 'На модерации', draft: 'Черновик', rejected: 'Отклонён' }[s] || s);
+const statusColor = (s: string) =>
+  s === 'approved'
+    ? 'text-brand-green'
+    : s === 'pending'
+      ? 'text-primary'
+      : s === 'draft'
+        ? 'text-muted-foreground'
+        : 'text-destructive';
+
+const authHeaders = () => ({
+  'Content-Type': 'application/json',
+  'X-Authorization': `Bearer ${getAuthToken()}`,
+});
 
 const Admin = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -33,10 +51,14 @@ const Admin = () => {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
+
   const load = () => {
     setLoading(true);
-    fetchProducts()
-      .then(setProducts)
+    fetch(`${API.products}?all=1`, { headers: { 'X-Authorization': `Bearer ${getAuthToken()}` } })
+      .then((r) => r.json())
+      .then((d) => setProducts(d.products || []))
       .finally(() => setLoading(false));
   };
 
@@ -70,33 +92,64 @@ const Admin = () => {
     }
     setSaving(true);
     try {
-      const payload = {
-        title: form.title,
-        desc: form.desc,
-        fullDescription: form.fullDescription,
-        price: Number(form.price),
-        category: form.category,
-        icon: form.icon,
-      };
-      const res = await fetch(API.products, {
-        method: editing ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editing ? { ...payload, id: editing.id } : payload),
-      });
-      if (!res.ok) {
-        toast.error('Не удалось сохранить товар');
-        return;
+      if (editing) {
+        const payload = {
+          title: form.title,
+          desc: form.desc,
+          fullDescription: form.fullDescription,
+          price: Number(form.price),
+          category: form.category,
+          icon: form.icon,
+          id: editing.id,
+        };
+        const res = await fetch(API.products, {
+          method: 'PUT',
+          headers: authHeaders(),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(data.error || 'Не удалось сохранить товар');
+          return;
+        }
+        toast.success('Товар обновлён');
+        setDialogOpen(false);
+        load();
+      } else {
+        const res = await fetch(API.products, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            action: 'create-draft',
+            title: form.title,
+            desc: form.desc,
+            fullDescription: form.fullDescription,
+            price: Number(form.price),
+            category: form.category,
+            icon: form.icon,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(data.error || 'Не удалось создать товар');
+          return;
+        }
+        toast.success('Данные сохранены, добавьте медиафайлы');
+        setDialogOpen(false);
+        load();
+        setDraftProduct({ id: data.product.id, title: data.product.title });
+        setMediaOpen(true);
       }
-      toast.success(editing ? 'Товар обновлён' : 'Товар добавлен');
-      setDialogOpen(false);
-      load();
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (id: number) => {
-    const res = await fetch(`${API.products}?id=${id}`, { method: 'DELETE' });
+    const res = await fetch(`${API.products}?id=${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
     if (!res.ok) {
       toast.error('Не удалось удалить товар');
       return;
@@ -105,8 +158,13 @@ const Admin = () => {
     setProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
+  const continueMedia = (p: Product) => {
+    setDraftProduct({ id: p.id, title: p.title });
+    setMediaOpen(true);
+  };
+
   const stats = [
-    { label: 'Товаров в каталоге', value: products.length, icon: 'Package' },
+    { label: 'Товаров в каталоге', value: products.filter((p) => p.status === 'approved').length, icon: 'Package' },
     { label: 'Способы оплаты', value: 'AZVOX · ЮMoney', icon: 'CreditCard' },
   ];
 
@@ -149,7 +207,7 @@ const Admin = () => {
                 <TableHead>Товар</TableHead>
                 <TableHead className="hidden md:table-cell">Категория</TableHead>
                 <TableHead>Цена</TableHead>
-                <TableHead className="hidden sm:table-cell">Продаж</TableHead>
+                <TableHead>Статус</TableHead>
                 <TableHead className="text-right">Действия</TableHead>
               </TableRow>
             </TableHeader>
@@ -170,11 +228,20 @@ const Admin = () => {
                   <TableCell className="font-head font-semibold text-foreground">
                     {formatPrice(p.price)}
                   </TableCell>
-                  <TableCell className="hidden text-muted-foreground sm:table-cell">
-                    {p.sales}
+                  <TableCell className={`font-medium ${statusColor(p.status || 'approved')}`}>
+                    {statusLabel(p.status || 'approved')}
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
+                      {p.status === 'draft' && (
+                        <button
+                          onClick={() => continueMedia(p)}
+                          className="flex h-8 items-center gap-1.5 rounded-lg border border-brand-cyan/40 px-2.5 text-xs font-medium text-brand-cyan transition-colors hover:bg-brand-cyan/10"
+                        >
+                          <Icon name="Upload" size={13} />
+                          Медиа
+                        </button>
+                      )}
                       <button
                         onClick={() => openEdit(p)}
                         className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
@@ -273,11 +340,18 @@ const Admin = () => {
               disabled={saving}
               className="rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
             >
-              Сохранить
+              {editing ? 'Сохранить' : 'Далее: медиафайлы'}
             </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProductMediaDialog
+        product={draftProduct}
+        open={mediaOpen}
+        onOpenChange={setMediaOpen}
+        onSubmitted={load}
+      />
     </AdminGuard>
   );
 };

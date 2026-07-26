@@ -516,6 +516,139 @@ def handle_azvox_status(event, cur, conn):
     return {'statusCode': 200, 'headers': text_headers, 'body': f'{order_id}|success'}
 
 
+def news_dict(row) -> dict:
+    return {
+        'id': row[0],
+        'slug': row[1],
+        'title': row[2],
+        'tag': row[3],
+        'text': row[4],
+        'fullText': row[5],
+        'icon': row[6],
+        'coverImage': row[7],
+        'publishedAt': row[8].strftime('%d.%m.%Y'),
+    }
+
+
+def news_comment_dict(row) -> dict:
+    return {
+        'id': row[0],
+        'text': row[1],
+        'createdAt': row[2].strftime('%d.%m.%Y %H:%M'),
+        'userName': row[3],
+    }
+
+
+def handle_news(event, cur, conn, method, headers_common, token, params):
+    if method == 'GET':
+        slug = params.get('slug')
+        if slug:
+            cur.execute(
+                f"SELECT id, slug, title, tag, text, full_text, icon, cover_image, published_at "
+                f"FROM {SCHEMA}.news WHERE slug = %s",
+                (slug,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return resp(404, {'error': 'Новость не найдена'}, headers_common)
+            return resp(200, {'news': news_dict(row)}, headers_common)
+        cur.execute(
+            f"SELECT id, slug, title, tag, text, full_text, icon, cover_image, published_at "
+            f"FROM {SCHEMA}.news ORDER BY published_at DESC"
+        )
+        return resp(200, {'news': [news_dict(r) for r in cur.fetchall()]}, headers_common)
+
+    admin_id = None
+    if method in ('POST', 'PUT', 'DELETE'):
+        user_row = get_user(cur, token)
+        if not user_row or not user_row[1]:
+            return resp(403, {'error': 'Доступ только для администратора'}, headers_common)
+        admin_id = user_row[0]
+
+    body = json.loads(event.get('body') or '{}')
+
+    if method == 'POST':
+        title = (body.get('title') or '').strip()
+        text = (body.get('text') or '').strip()
+        if len(title) < 2 or len(text) < 2:
+            return resp(400, {'error': 'Заполните заголовок и текст новости'}, headers_common)
+        slug_base = title.lower().replace(' ', '-').replace('«', '').replace('»', '')
+        slug = ''.join(c for c in slug_base if c.isalnum() or c == '-') or f"news-{uuid.uuid4().hex[:6]}"
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.news (slug, title, tag, text, full_text, icon, cover_image) "
+            f"VALUES (%s,%s,%s,%s,%s,%s,%s) "
+            f"RETURNING id, slug, title, tag, text, full_text, icon, cover_image, published_at",
+            (
+                slug, title, body.get('tag', 'Новость'), text,
+                body.get('fullText', text), body.get('icon', 'Newspaper'), body.get('coverImage'),
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return resp(200, {'news': news_dict(row)}, headers_common)
+
+    if method == 'PUT':
+        nid = body.get('id')
+        cur.execute(
+            f"UPDATE {SCHEMA}.news SET title=%s, tag=%s, text=%s, full_text=%s, icon=%s, cover_image=%s "
+            f"WHERE id=%s RETURNING id, slug, title, tag, text, full_text, icon, cover_image, published_at",
+            (
+                body.get('title'), body.get('tag'), body.get('text'), body.get('fullText'),
+                body.get('icon'), body.get('coverImage'), nid,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        if not row:
+            return resp(404, {'error': 'Новость не найдена'}, headers_common)
+        return resp(200, {'news': news_dict(row)}, headers_common)
+
+    if method == 'DELETE':
+        nid = params.get('id') or body.get('id')
+        cur.execute(f"DELETE FROM {SCHEMA}.news_comments WHERE news_id = %s", (nid,))
+        cur.execute(f"DELETE FROM {SCHEMA}.news WHERE id = %s", (nid,))
+        conn.commit()
+        return resp(200, {'ok': True}, headers_common)
+
+    return resp(405, {'error': 'Метод не поддерживается'}, headers_common)
+
+
+def handle_news_comments(event, cur, conn, method, headers_common, token, params):
+    if method == 'GET':
+        news_id = params.get('newsId')
+        if not news_id:
+            return resp(400, {'error': 'Не указана новость'}, headers_common)
+        cur.execute(
+            f"SELECT c.id, c.text, c.created_at, u.name FROM {SCHEMA}.news_comments c "
+            f"JOIN {SCHEMA}.users u ON u.id = c.user_id WHERE c.news_id = %s ORDER BY c.created_at DESC",
+            (news_id,),
+        )
+        return resp(200, {'comments': [news_comment_dict(r) for r in cur.fetchall()]}, headers_common)
+
+    if method == 'POST':
+        user_row = get_user(cur, token)
+        if not user_row:
+            return resp(401, {'error': 'Войдите в аккаунт, чтобы оставить комментарий'}, headers_common)
+        user_id = user_row[0]
+        body = json.loads(event.get('body') or '{}')
+        text = (body.get('text') or '').strip()
+        news_id = body.get('newsId')
+        if len(text) < 2 or not news_id:
+            return resp(400, {'error': 'Введите текст комментария'}, headers_common)
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.news_comments (news_id, user_id, text) VALUES (%s, %s, %s) "
+            f"RETURNING id, text, created_at",
+            (news_id, user_id, text),
+        )
+        row = cur.fetchone()
+        cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (user_id,))
+        name = cur.fetchone()[0]
+        conn.commit()
+        return resp(200, {'comment': news_comment_dict((row[0], row[1], row[2], name))}, headers_common)
+
+    return resp(405, {'error': 'Метод не поддерживается'}, headers_common)
+
+
 def handler(event: dict, context):
     """Личный кабинет пользователя: онлайн-присутствие, заказ рекламы, обращения в поддержку, баланс (пополнение/вывод). Раздел выбирается параметром resource"""
     method = event.get('httpMethod', 'GET')
@@ -545,6 +678,10 @@ def handler(event: dict, context):
             return handle_support(event, cur, conn, method, headers_common, token, params)
         if resource == 'wallet':
             return handle_wallet(event, cur, conn, method, headers_common, token)
+        if resource == 'news':
+            return handle_news(event, cur, conn, method, headers_common, token, params)
+        if resource == 'news-comments':
+            return handle_news_comments(event, cur, conn, method, headers_common, token, params)
         if resource == 'payment':
             payment_action = params.get('action', '')
             if payment_action == 'create-order' and method == 'POST':

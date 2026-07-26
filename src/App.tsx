@@ -18,6 +18,7 @@ import Support from "./pages/Support";
 import About from "./pages/About";
 import ReviewsPage from "./pages/ReviewsPage";
 import NewsPage from "./pages/NewsPage";
+import NewsPost from "./pages/NewsPost";
 import Offer from "./pages/Offer";
 import NotFound from "./pages/NotFound";
 import OnlineWidget from "@/components/site/OnlineWidget";
@@ -29,6 +30,7 @@ import AdminUsers from "./pages/admin/Users";
 import AdminModeration from "./pages/admin/Moderation";
 import AdminSupport from "./pages/admin/Support";
 import AdminBanners from "./pages/admin/Banners";
+import AdminNews from "./pages/admin/News";
 
 const queryClient = new QueryClient();
 
@@ -51,6 +53,7 @@ const App = () => (
             <Route path="/admin/auth-history" element={<AdminAuthHistory />} />
             <Route path="/admin/payouts" element={<AdminPayouts />} />
             <Route path="/admin/support" element={<AdminSupport />} />
+            <Route path="/admin/news" element={<AdminNews />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/cabinet" element={<Cabinet />} />
             <Route path="/product/:slug" element={<Product />} />
@@ -62,6 +65,7 @@ const App = () => (
             <Route path="/about" element={<About />} />
             <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/news" element={<NewsPage />} />
+            <Route path="/news/:slug" element={<NewsPost />} />
             <Route path="/offer" element={<Offer />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

@@ -11,4 +11,6 @@ export const API = {
   wallet: `${funcUrls.account}?resource=wallet`,
   paymentCreate: `${funcUrls.account}?resource=payment&action=create-order`,
   adTrack: `${funcUrls.account}?resource=ad-track`,
+  news: `${funcUrls.account}?resource=news`,
+  newsComments: `${funcUrls.account}?resource=news-comments`,
 };

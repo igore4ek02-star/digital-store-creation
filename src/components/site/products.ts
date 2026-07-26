@@ -16,6 +16,9 @@ export interface Product {
   sales: number;
   coverImage?: string;
   images?: string[];
+  status?: string;
+  fileUrl?: string;
+  fileName?: string;
 }
 
 export const CATEGORIES: (Category | 'Все')[] = ['Все', 'Скрипты', 'Шаблоны', 'Плагины', 'Проекты'];

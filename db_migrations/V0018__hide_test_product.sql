@@ -1,0 +1,1 @@
+UPDATE products SET status = 'rejected', title = 'test-hidden-9' WHERE id = 9;
