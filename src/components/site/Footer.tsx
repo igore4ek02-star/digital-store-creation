@@ -5,15 +5,30 @@ const Footer = () => {
   const cols = [
     {
       title: 'Каталог',
-      links: ['PHP-скрипты', 'Шаблоны сайтов', 'Плагины и модули', 'Готовые проекты'],
+      links: [
+        { label: 'PHP-скрипты', to: '/catalog/scripts' },
+        { label: 'Шаблоны сайтов', to: '/catalog/templates' },
+        { label: 'Плагины и модули', to: '/catalog/plugins' },
+        { label: 'Готовые проекты', to: '/catalog/projects' },
+      ],
     },
     {
       title: 'Клиентам',
-      links: ['Как это работает', 'Оплата AZVOX и ЮMoney', 'Установка под ключ', 'Поддержка'],
+      links: [
+        { label: 'Как это работает', to: '/how-it-works' },
+        { label: 'Оплата AZVOX и ЮMoney', to: '/payment' },
+        { label: 'Установка под ключ', to: '/installation' },
+        { label: 'Поддержка', to: '/support' },
+      ],
     },
     {
       title: 'Компания',
-      links: ['О нас', 'Отзывы', 'Новости', 'Договор оферты'],
+      links: [
+        { label: 'О нас', to: '/about' },
+        { label: 'Отзывы', to: '/reviews' },
+        { label: 'Новости', to: '/news' },
+        { label: 'Договор оферты', to: '/offer' },
+      ],
     },
   ];
 
@@ -43,13 +58,13 @@ const Footer = () => {
               </h4>
               <ul className="space-y-2.5">
                 {c.links.map((l) => (
-                  <li key={l}>
-                    <a
-                      href="#catalog"
+                  <li key={l.label}>
+                    <Link
+                      to={l.to}
                       className="text-sm text-muted-foreground transition-colors hover:text-brand-cyan"
                     >
-                      {l}
-                    </a>
+                      {l.label}
+                    </Link>
                   </li>
                 ))}
               </ul>

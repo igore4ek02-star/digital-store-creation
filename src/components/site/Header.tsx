@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
 
 const NAV = [
@@ -14,6 +14,8 @@ const Header = () => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { user } = useAuth();
+  const location = useLocation();
+  const isHome = location.pathname === '/';
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -39,15 +41,25 @@ const Header = () => {
         </a>
 
         <nav className="ml-2 hidden items-center gap-8 lg:flex">
-          {NAV.map((n) => (
-            <button
-              key={n.href}
-              onClick={() => scrollTo(n.href)}
-              className="font-head text-sm font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-brand-cyan"
-            >
-              {n.label}
-            </button>
-          ))}
+          {NAV.map((n) =>
+            isHome ? (
+              <button
+                key={n.href}
+                onClick={() => scrollTo(n.href)}
+                className="font-head text-sm font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-brand-cyan"
+              >
+                {n.label}
+              </button>
+            ) : (
+              <Link
+                key={n.href}
+                to={`/${n.href}`}
+                className="font-head text-sm font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-brand-cyan"
+              >
+                {n.label}
+              </Link>
+            ),
+          )}
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
@@ -65,16 +77,25 @@ const Header = () => {
             <Icon name={user ? 'CircleUser' : 'LogIn'} size={15} />
             {user ? 'Кабинет' : 'Войти'}
           </Link>
-          <a
-            href="#catalog"
-            onClick={(e) => {
-              e.preventDefault();
-              scrollTo('#catalog');
-            }}
-            className="hidden rounded-full bg-primary px-5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 sm:inline-block"
-          >
-            В каталог
-          </a>
+          {isHome ? (
+            <a
+              href="#catalog"
+              onClick={(e) => {
+                e.preventDefault();
+                scrollTo('#catalog');
+              }}
+              className="hidden rounded-full bg-primary px-5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 sm:inline-block"
+            >
+              В каталог
+            </a>
+          ) : (
+            <Link
+              to="/#catalog"
+              className="hidden rounded-full bg-primary px-5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 sm:inline-block"
+            >
+              В каталог
+            </Link>
+          )}
           <button
             className="text-foreground lg:hidden"
             onClick={() => setOpen((o) => !o)}
@@ -88,15 +109,26 @@ const Header = () => {
       {open && (
         <div className="border-t border-border bg-[#16191c] px-5 py-4 lg:hidden">
           <nav className="flex flex-col gap-1">
-            {NAV.map((n) => (
-              <button
-                key={n.href}
-                onClick={() => scrollTo(n.href)}
-                className="rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted hover:text-brand-cyan"
-              >
-                {n.label}
-              </button>
-            ))}
+            {NAV.map((n) =>
+              isHome ? (
+                <button
+                  key={n.href}
+                  onClick={() => scrollTo(n.href)}
+                  className="rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted hover:text-brand-cyan"
+                >
+                  {n.label}
+                </button>
+              ) : (
+                <Link
+                  key={n.href}
+                  to={`/${n.href}`}
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted hover:text-brand-cyan"
+                >
+                  {n.label}
+                </Link>
+              ),
+            )}
             <Link
               to={user ? '/cabinet' : '/auth'}
               onClick={() => setOpen(false)}
