@@ -112,6 +112,11 @@ def handler(event: dict, context):
             row = cur.fetchone()
             token = create_session(cur, row[0])
             log_auth(cur, row[0], 'register', event)
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+                f"VALUES ('new_user', 'Новый пользователь', %s, %s)",
+                (f"{name} ({email}) зарегистрировался", row[0]),
+            )
             conn.commit()
             return resp(200, {'token': token, 'user': user_dict(row)}, headers_common)
 
@@ -125,14 +130,31 @@ def handler(event: dict, context):
             )
             row = cur.fetchone()
             if not row:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message) "
+                    f"VALUES ('login_failed', 'Неудачная попытка входа', %s)",
+                    (f"Неизвестный e-mail: {email}",),
+                )
+                conn.commit()
                 return resp(401, {'error': 'Неверный e-mail или пароль'}, headers_common)
             salt, stored_hash = row[5].split('$')
             if hash_password(password, salt) != stored_hash:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+                    f"VALUES ('login_failed', 'Неудачная попытка входа', %s, %s)",
+                    (f"Неверный пароль для {row[1]} ({email})", row[0]),
+                )
+                conn.commit()
                 return resp(401, {'error': 'Неверный e-mail или пароль'}, headers_common)
             if row[7]:
                 return resp(403, {'error': 'Аккаунт заблокирован. Обратитесь в поддержку'}, headers_common)
             token = create_session(cur, row[0])
             log_auth(cur, row[0], 'login', event)
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
+                f"VALUES ('login', 'Вход в аккаунт', %s, %s, TRUE)",
+                (f"{row[1]} ({email}) вошёл в аккаунт", row[0]),
+            )
             conn.commit()
             user_row = (row[0], row[1], row[2], row[3], row[4], row[6])
             return resp(200, {'token': token, 'user': user_dict(user_row)}, headers_common)

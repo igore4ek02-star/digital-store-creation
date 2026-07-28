@@ -162,6 +162,18 @@ def handler(event: dict, context):
                 products = [product_dict(r) for r in cur.fetchall()]
                 return resp(200, {'products': products}, headers_common)
 
+            if params.get('mine') == '1':
+                user_row = get_user(cur, token)
+                if not user_row:
+                    return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+                cur.execute(
+                    f"SELECT {PRODUCT_FIELDS} FROM {SCHEMA}.products WHERE seller_id = %s AND status != 'draft' "
+                    f"ORDER BY id DESC",
+                    (user_row[0],),
+                )
+                products = [product_dict(r) for r in cur.fetchall()]
+                return resp(200, {'products': products}, headers_common)
+
             cur.execute(
                 f"SELECT {PRODUCT_FIELDS} FROM {SCHEMA}.products WHERE status = 'approved' ORDER BY id"
             )

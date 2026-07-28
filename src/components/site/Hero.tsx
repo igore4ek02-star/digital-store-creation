@@ -60,34 +60,30 @@ const Hero = () => {
               </button>
             </div>
           ))}
-          <div className="hidden items-center justify-center md:flex">
-            <button
-              onClick={() => setAdDialogOpen(true)}
-              aria-label="Заказать рекламу"
-              title="Заказать текстовую рекламу"
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-green text-primary-foreground shadow-[0_8px_22px_-8px_hsl(var(--brand-green)/0.8)] transition-transform hover:scale-105"
-            >
-              <Icon name="Plus" size={26} />
-            </button>
-          </div>
         </div>
 
-        {ads.length > 0 && (
-          <div className="animate-rise flex flex-col gap-2.5 md:flex-row md:flex-wrap">
-            {ads.map((ad) => (
-              <a
-                key={ad.id}
-                href={ad.link || '#top'}
-                target={ad.link ? '_blank' : undefined}
-                rel={ad.link ? 'noopener noreferrer' : undefined}
-                className="flex items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-sm text-foreground transition-colors hover:border-primary/60"
-              >
-                <Icon name="Megaphone" size={15} className="shrink-0 text-primary" />
-                <span className="truncate">{ad.text}</span>
-              </a>
-            ))}
-          </div>
-        )}
+        <div className="animate-rise flex flex-wrap items-center gap-2.5">
+          {ads.map((ad) => (
+            <a
+              key={ad.id}
+              href={ad.link || '#top'}
+              target={ad.link ? '_blank' : undefined}
+              rel={ad.link ? 'noopener noreferrer' : undefined}
+              className="flex items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-sm text-foreground transition-colors hover:border-primary/60"
+            >
+              <Icon name="Megaphone" size={15} className="shrink-0 text-primary" />
+              <span className="truncate">{ad.text}</span>
+            </a>
+          ))}
+          <button
+            onClick={() => setAdDialogOpen(true)}
+            aria-label="Заказать рекламу"
+            title="Заказать текстовую рекламу"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-green text-primary-foreground shadow-[0_8px_22px_-8px_hsl(var(--brand-green)/0.8)] transition-transform hover:scale-105"
+          >
+            <Icon name="Plus" size={20} />
+          </button>
+        </div>
 
         {/* search */}
         <form

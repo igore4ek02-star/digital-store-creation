@@ -15,13 +15,30 @@ interface NotificationItem {
 }
 
 const typeIcon = (t: string) =>
-  ({ product_moderation: 'Package', ad_moderation: 'Megaphone', payout_request: 'Banknote' }[t] ||
-  'Bell');
+  ({
+    product_moderation: 'Package',
+    ad_moderation: 'Megaphone',
+    payout_request: 'Banknote',
+    login: 'LogIn',
+    login_failed: 'ShieldAlert',
+    topup: 'Wallet',
+    new_user: 'UserPlus',
+    support_ticket: 'Headphones',
+    purchase: 'ShoppingCart',
+  }[t] || 'Bell');
 
 const typeLink = (t: string) =>
-  ({ product_moderation: '/admin/moderation', ad_moderation: '/admin/moderation', payout_request: '/admin/payouts' }[
-    t
-  ] || '/admin');
+  ({
+    product_moderation: '/admin/moderation',
+    ad_moderation: '/admin/moderation',
+    payout_request: '/admin/payouts',
+    login: '/admin/auth-history',
+    login_failed: '/admin/auth-history',
+    topup: '/admin/finance',
+    new_user: '/admin/users',
+    support_ticket: '/admin/support',
+    purchase: '/admin/finance',
+  }[t] || '/admin');
 
 const AdminNotifications = () => {
   const [items, setItems] = useState<NotificationItem[]>([]);

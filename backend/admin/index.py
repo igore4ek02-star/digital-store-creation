@@ -378,6 +378,20 @@ def handler(event: dict, context):
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 
+            if action == 'update-ad':
+                aid = body['id']
+                text = (body.get('text') or '').strip()
+                link = (body.get('link') or '').strip() or None
+                days = body.get('days')
+                if len(text) < 2:
+                    return resp(400, {'error': 'Введите текст объявления'}, headers_common)
+                cur.execute(
+                    f"UPDATE {SCHEMA}.ads SET text = %s, link = %s, days = COALESCE(%s, days) WHERE id = %s",
+                    (text, link, days, aid),
+                )
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
             if action == 'toggle-ad-status':
                 aid = body['id']
                 new_status = body['status']

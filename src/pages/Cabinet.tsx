@@ -14,8 +14,10 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { useAuth, getAuthToken } from '@/hooks/use-auth';
-import { formatPrice } from '@/components/site/products';
+import { formatPrice, Product } from '@/components/site/products';
 import { API } from '@/lib/api';
+import ProposeProductDialog from '@/components/site/ProposeProductDialog';
+import ProductMediaDialog from '@/components/site/ProductMediaDialog';
 
 interface Purchase {
   id: string;
@@ -89,6 +91,12 @@ const Cabinet = () => {
   const [message, setMessage] = useState('');
   const [ticketSubmitting, setTicketSubmitting] = useState(false);
 
+  const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [myProductsLoading, setMyProductsLoading] = useState(true);
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
+
   useEffect(() => {
     if (!user) navigate('/auth');
   }, [user, navigate]);
@@ -112,10 +120,19 @@ const Cabinet = () => {
       .finally(() => setTicketsLoading(false));
   };
 
+  const loadMyProducts = () => {
+    setMyProductsLoading(true);
+    fetch(`${API.products}?mine=1`, { headers: { 'X-Authorization': `Bearer ${getAuthToken()}` } })
+      .then((r) => r.json())
+      .then((d) => setMyProducts(d.products || []))
+      .finally(() => setMyProductsLoading(false));
+  };
+
   useEffect(() => {
     if (!user) return;
     loadWallet();
     loadTickets();
+    loadMyProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -305,6 +322,7 @@ const Cabinet = () => {
         <Tabs defaultValue="purchases">
           <TabsList>
             <TabsTrigger value="purchases">Мои покупки</TabsTrigger>
+            <TabsTrigger value="my-products">Мои товары</TabsTrigger>
             <TabsTrigger value="wallet">Баланс</TabsTrigger>
             <TabsTrigger value="support">Поддержка</TabsTrigger>
             <TabsTrigger value="profile">Профиль</TabsTrigger>
@@ -352,6 +370,63 @@ const Cabinet = () => {
                 </div>
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="my-products">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Статус ваших товаров, отправленных на модерацию.
+              </p>
+              <button
+                onClick={() => setProposeOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+              >
+                <Icon name="Plus" size={16} />
+                Предложить товар
+              </button>
+            </div>
+            {myProductsLoading ? (
+              <div className="h-32 animate-pulse rounded-2xl border border-border bg-card" />
+            ) : myProducts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Вы пока не предлагали товары.</p>
+            ) : (
+              <div className="space-y-3">
+                {myProducts.map((p) => {
+                  const statusLabel =
+                    ({ approved: 'Опубликован', pending: 'На модерации', rejected: 'Отклонён' } as Record<
+                      string,
+                      string
+                    >)[p.status || ''] || p.status;
+                  const statusColor =
+                    p.status === 'approved'
+                      ? 'text-brand-green'
+                      : p.status === 'pending'
+                        ? 'text-primary'
+                        : 'text-destructive';
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                          <Icon name={p.icon} size={22} />
+                        </span>
+                        <div>
+                          <p className="font-head font-semibold uppercase tracking-wide text-foreground">
+                            {p.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {p.category} · {formatPrice(p.price)}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`text-sm font-medium ${statusColor}`}>{statusLabel}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="wallet">
@@ -637,6 +712,22 @@ const Cabinet = () => {
           </button>
         </DialogContent>
       </Dialog>
+
+      <ProposeProductDialog
+        open={proposeOpen}
+        onOpenChange={setProposeOpen}
+        onDraftCreated={(product) => {
+          setDraftProduct(product);
+          setMediaOpen(true);
+          loadMyProducts();
+        }}
+      />
+      <ProductMediaDialog
+        product={draftProduct}
+        open={mediaOpen}
+        onOpenChange={setMediaOpen}
+        onSubmitted={loadMyProducts}
+      />
     </div>
   );
 };

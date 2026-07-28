@@ -295,6 +295,11 @@ def handle_support(event, cur, conn, method, headers_common, token, params):
             (user_id, subject, message),
         )
         row = cur.fetchone()
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+            f"VALUES ('support_ticket', 'Новое обращение в поддержку', %s, %s)",
+            (subject, row[0]),
+        )
         conn.commit()
         return resp(200, {'ticket': ticket_dict(row)}, headers_common)
 
@@ -357,6 +362,13 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
         cur.execute(
             f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'topup', %s, %s)",
             (user_id, amount, f'Пополнение через {method_name}'),
+        )
+        cur.execute(f"SELECT name, email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
+        uname, uemail = cur.fetchone()
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
+            f"VALUES ('topup', 'Пополнение баланса', %s, %s, TRUE)",
+            (f"{uname} ({uemail}) пополнил баланс на {amount:.0f} ₽ через {method_name}", user_id),
         )
         conn.commit()
         return resp(200, {'ok': True}, headers_common)
@@ -511,6 +523,12 @@ def handle_azvox_status(event, cur, conn):
             f"VALUES ('order', %s, %s, 'AZVOX', %s, %s, %s)",
             (order[3], order_id, order[2], new_status, operation_id),
         )
+        if new_status == 'paid':
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+                f"VALUES ('purchase', 'Новая покупка', %s, %s)",
+                (f"Заказ #{order_id} на {float(order[2]):.0f} ₽ оплачен", order_id),
+            )
         conn.commit()
 
     return {'statusCode': 200, 'headers': text_headers, 'body': f'{order_id}|success'}

@@ -11,6 +11,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { formatPrice } from '@/components/site/products';
 import { API } from '@/lib/api';
@@ -55,6 +62,12 @@ const AdminBanners = () => {
   const [bannerPrice, setBannerPrice] = useState('300');
   const [autoPublish, setAutoPublish] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+
+  const [editingAd, setEditingAd] = useState<AdRow | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editLink, setEditLink] = useState('');
+  const [editDays, setEditDays] = useState('');
+  const [savingAd, setSavingAd] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -142,6 +155,53 @@ const AdminBanners = () => {
     }
     toast.success(newStatus === 'active' ? 'Реклама включена' : 'Реклама выключена');
     setAds((prev) => prev.map((a) => (a.id === ad.id ? { ...a, status: newStatus } : a)));
+  };
+
+  const openEditAd = (ad: AdRow) => {
+    setEditingAd(ad);
+    setEditText(ad.text);
+    setEditLink(ad.link || '');
+    setEditDays(String(ad.days));
+  };
+
+  const saveAd = async () => {
+    if (!editingAd) return;
+    if (editText.trim().length < 2) {
+      toast.error('Введите текст объявления');
+      return;
+    }
+    setSavingAd(true);
+    try {
+      const res = await fetch(API.admin, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Authorization': `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          action: 'update-ad',
+          id: editingAd.id,
+          text: editText.trim(),
+          link: editLink.trim(),
+          days: Number(editDays) || undefined,
+        }),
+      });
+      if (!res.ok) {
+        toast.error('Не удалось сохранить рекламу');
+        return;
+      }
+      toast.success('Реклама обновлена');
+      setAds((prev) =>
+        prev.map((a) =>
+          a.id === editingAd.id
+            ? { ...a, text: editText.trim(), link: editLink.trim() || null, days: Number(editDays) || a.days }
+            : a,
+        ),
+      );
+      setEditingAd(null);
+    } finally {
+      setSavingAd(false);
+    }
   };
 
   const removeAd = async (id: number) => {
@@ -325,6 +385,16 @@ const AdminBanners = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
+                      {a.adType === 'text' && (
+                        <button
+                          onClick={() => openEditAd(a)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
+                          aria-label="Редактировать"
+                          title="Редактировать текст"
+                        >
+                          <Icon name="Pencil" size={15} />
+                        </button>
+                      )}
                       {(a.status === 'active' || a.status === 'pending' || a.status === 'rejected') && (
                         <button
                           onClick={() => toggleStatus(a)}
@@ -354,6 +424,61 @@ const AdminBanners = () => {
           </Table>
         )}
       </div>
+
+      <Dialog open={!!editingAd} onOpenChange={(v) => !v && setEditingAd(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-head uppercase tracking-wide">
+              Редактировать рекламу
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ad-edit-text">Текст объявления</Label>
+              <Input
+                id="ad-edit-text"
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                maxLength={100}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ad-edit-link">Ссылка (необязательно)</Label>
+              <Input
+                id="ad-edit-link"
+                value={editLink}
+                onChange={(e) => setEditLink(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ad-edit-days">Срок показа, дней</Label>
+              <Input
+                id="ad-edit-days"
+                type="number"
+                min={1}
+                value={editDays}
+                onChange={(e) => setEditDays(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setEditingAd(null)}
+              className="rounded-lg border border-border px-4 py-2.5 font-head text-sm font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={saveAd}
+              disabled={savingAd}
+              className="rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
+            >
+              Сохранить
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminGuard>
   );
 };

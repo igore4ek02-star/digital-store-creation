@@ -1,0 +1,1 @@
+UPDATE products SET status = 'rejected' WHERE id = 10;
