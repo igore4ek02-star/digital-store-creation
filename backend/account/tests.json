@@ -23,6 +23,18 @@
       "method": "GET",
       "path": "/?resource=orders",
       "expectedStatus": 401
+    },
+    {
+      "name": "GET order-status без параметров",
+      "method": "GET",
+      "path": "/?resource=order-status",
+      "expectedStatus": 400
+    },
+    {
+      "name": "GET order-status несуществующий заказ",
+      "method": "GET",
+      "path": "/?resource=order-status&orderId=999999&token=abc",
+      "expectedStatus": 404
     }
   ]
 }

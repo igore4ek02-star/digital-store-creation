@@ -84,7 +84,11 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         return;
       }
 
-      if (data.provider === 'AZVOX' && data.form) {
+      if (data.form && data.accessToken) {
+        localStorage.setItem(
+          'pending-order',
+          JSON.stringify({ orderId: data.orderId, token: data.accessToken, title: product.title }),
+        );
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = data.form.payUrl;

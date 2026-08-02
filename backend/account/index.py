@@ -498,10 +498,11 @@ def handle_payment_create(event, cur, conn, headers_common, token):
     if not product:
         return resp(404, {'error': 'Товар не найден'}, headers_common)
 
+    access_token = uuid.uuid4().hex
     cur.execute(
-        f"INSERT INTO {SCHEMA}.orders (product_id, user_id, email, method, amount, status) "
-        f"VALUES (%s, %s, %s, %s, %s, 'pending') RETURNING id",
-        (product_id, user_id, email, method, product[2]),
+        f"INSERT INTO {SCHEMA}.orders (product_id, user_id, email, method, amount, status, access_token) "
+        f"VALUES (%s, %s, %s, %s, %s, 'pending', %s) RETURNING id",
+        (product_id, user_id, email, method, product[2], access_token),
     )
     order_id = cur.fetchone()[0]
     conn.commit()
@@ -510,9 +511,35 @@ def handle_payment_create(event, cur, conn, headers_common, token):
         if not AZVOX_SHOP_ID or not AZVOX_SECRET_KEY:
             return resp(500, {'error': 'AZVOX не настроен. Обратитесь к администратору'}, headers_common)
         form = build_azvox_form(order_id, float(product[2]), product[1])
-        return resp(200, {'orderId': order_id, 'provider': 'AZVOX', 'form': form}, headers_common)
+        return resp(200, {
+            'orderId': order_id, 'provider': 'AZVOX', 'form': form, 'accessToken': access_token,
+        }, headers_common)
 
     return resp(400, {'error': 'Этот способ оплаты скоро будет доступен'}, headers_common)
+
+
+def handle_order_status(params, cur, headers_common):
+    order_id = params.get('orderId')
+    access_token = params.get('token')
+    if not order_id or not access_token:
+        return resp(400, {'error': 'Не указан заказ'}, headers_common)
+    cur.execute(
+        f"SELECT o.status, p.title, p.file_url, p.file_name FROM {SCHEMA}.orders o "
+        f"JOIN {SCHEMA}.products p ON p.id = o.product_id "
+        f"WHERE o.id = %s AND o.access_token = %s",
+        (order_id, access_token),
+    )
+    row = cur.fetchone()
+    if not row:
+        return resp(404, {'error': 'Заказ не найден'}, headers_common)
+    status, title, file_url, file_name = row
+    return resp(200, {
+        'status': status,
+        'paid': status == 'paid',
+        'title': title,
+        'fileUrl': file_url if status == 'paid' else None,
+        'fileName': file_name if status == 'paid' else None,
+    }, headers_common)
 
 
 def handle_my_orders(cur, headers_common, token):
@@ -778,6 +805,8 @@ def handler(event: dict, context):
             return resp(400, {'error': 'Неизвестное действие оплаты'}, headers_common)
         if resource == 'orders' and method == 'GET':
             return handle_my_orders(cur, headers_common, token)
+        if resource == 'order-status' and method == 'GET':
+            return handle_order_status(params, cur, headers_common)
         return resp(400, {'error': 'Не указан или неизвестен resource'}, headers_common)
     finally:
         cur.close()
