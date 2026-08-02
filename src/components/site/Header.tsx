@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
+import ProposeProductDialog from '@/components/site/ProposeProductDialog';
+import ProductMediaDialog from '@/components/site/ProductMediaDialog';
 
 const NAV = [
   { label: 'Каталог', href: '#catalog' },
@@ -15,7 +17,12 @@ const Header = () => {
   const [scrolled, setScrolled] = useState(false);
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const isHome = location.pathname === '/';
+
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -27,6 +34,15 @@ const Header = () => {
     setOpen(false);
     const el = document.querySelector(href);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const openPropose = () => {
+    setOpen(false);
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    setProposeOpen(true);
   };
 
   return (
@@ -63,6 +79,13 @@ const Header = () => {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={openPropose}
+            className="hidden items-center gap-2 rounded-full border border-brand-cyan/50 px-4 py-2 font-head text-xs font-semibold uppercase tracking-wide text-brand-cyan transition-colors hover:bg-brand-cyan/10 md:inline-flex"
+          >
+            <Icon name="Plus" size={15} />
+            Добавить товар
+          </button>
           <Link
             to={user ? '/cabinet' : '/auth'}
             className="hidden items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan md:inline-flex"
@@ -122,16 +145,38 @@ const Header = () => {
                 </Link>
               ),
             )}
+            <button
+              onClick={openPropose}
+              className="mt-1 flex items-center gap-2 rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-brand-cyan"
+            >
+              <Icon name="Plus" size={17} />
+              Добавить товар
+            </button>
             <Link
               to={user ? '/cabinet' : '/auth'}
               onClick={() => setOpen(false)}
-              className="mt-1 rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-foreground"
+              className="rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-foreground"
             >
               {user ? 'Личный кабинет' : 'Вход и регистрация'}
             </Link>
           </nav>
         </div>
       )}
+
+      <ProposeProductDialog
+        open={proposeOpen}
+        onOpenChange={setProposeOpen}
+        onDraftCreated={(product) => {
+          setDraftProduct(product);
+          setMediaOpen(true);
+        }}
+      />
+      <ProductMediaDialog
+        product={draftProduct}
+        open={mediaOpen}
+        onOpenChange={setMediaOpen}
+        onSubmitted={() => setDraftProduct(null)}
+      />
     </header>
   );
 };
