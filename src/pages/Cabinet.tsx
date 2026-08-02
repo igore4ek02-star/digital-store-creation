@@ -20,18 +20,34 @@ import ProposeProductDialog from '@/components/site/ProposeProductDialog';
 import ProductMediaDialog from '@/components/site/ProductMediaDialog';
 
 interface Purchase {
-  id: string;
+  id: number;
   title: string;
   amount: number;
-  method: 'AZVOX' | 'ЮMoney';
+  method: string;
   date: string;
+  fileUrl: string | null;
+  fileName: string | null;
 }
 
-const PURCHASES: Purchase[] = [
-  { id: '#10428', title: 'CMS интернет-магазина', amount: 3490, method: 'ЮMoney', date: '25.07.2026' },
-  { id: '#10391', title: 'Плагин приёма платежей', amount: 590, method: 'AZVOX', date: '19.07.2026' },
-  { id: '#10355', title: 'Шаблон лендинга «Про»', amount: 890, method: 'ЮMoney', date: '11.07.2026' },
-];
+const downloadFile = async (fileUrl: string, fileName: string, title: string) => {
+  try {
+    const res = await fetch(fileUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'file';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Скачивание началось', {
+      description: `Файл «${title}» загружается.`,
+    });
+  } catch {
+    toast.error('Не удалось скачать файл');
+  }
+};
 
 const PAYMENTS = [
   { id: 'AZVOX', label: 'AZVOX', desc: 'Карты и электронные кошельки' },
@@ -97,9 +113,20 @@ const Cabinet = () => {
   const [mediaOpen, setMediaOpen] = useState(false);
   const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
 
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [purchasesLoading, setPurchasesLoading] = useState(true);
+
   useEffect(() => {
     if (!user) navigate('/auth');
   }, [user, navigate]);
+
+  const loadPurchases = () => {
+    setPurchasesLoading(true);
+    fetch(API.myOrders, { headers: { 'X-Authorization': `Bearer ${getAuthToken()}` } })
+      .then((r) => r.json())
+      .then((d) => setPurchases(d.purchases || []))
+      .finally(() => setPurchasesLoading(false));
+  };
 
   const loadWallet = () => {
     setWalletLoading(true);
@@ -130,6 +157,7 @@ const Cabinet = () => {
 
   useEffect(() => {
     if (!user) return;
+    loadPurchases();
     loadWallet();
     loadTickets();
     loadMyProducts();
@@ -230,9 +258,9 @@ const Cabinet = () => {
     }
   };
 
-  const totalSpent = PURCHASES.reduce((s, p) => s + p.amount, 0);
+  const totalSpent = purchases.reduce((s, p) => s + p.amount, 0);
   const stats = [
-    { label: 'Покупок', value: PURCHASES.length, icon: 'ShoppingBag' },
+    { label: 'Покупок', value: purchases.length, icon: 'ShoppingBag' },
     { label: 'Потрачено', value: formatPrice(totalSpent), icon: 'Receipt' },
     { label: 'Баланс', value: formatPrice(user.balance), icon: 'Wallet' },
     { label: 'На счету с', value: user.createdAt, icon: 'CalendarDays' },
@@ -332,8 +360,13 @@ const Cabinet = () => {
             <p className="mb-4 text-sm text-muted-foreground">
               Купленные товары доступны для повторного скачивания в любое время.
             </p>
+            {purchasesLoading ? (
+              <div className="h-32 animate-pulse rounded-2xl border border-border bg-card" />
+            ) : purchases.length === 0 ? (
+              <p className="text-sm text-muted-foreground">У вас пока нет покупок.</p>
+            ) : (
             <div className="space-y-3">
-              {PURCHASES.map((p) => (
+              {purchases.map((p) => (
                 <div
                   key={p.id}
                   className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between"
@@ -347,7 +380,7 @@ const Cabinet = () => {
                         {p.title}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {p.id} · {p.date} · оплата {p.method}
+                        #{p.id} · {p.date} · оплата {p.method === 'BALANCE' ? 'с баланса' : p.method}
                       </p>
                     </div>
                   </div>
@@ -356,12 +389,9 @@ const Cabinet = () => {
                       {formatPrice(p.amount)}
                     </span>
                     <button
-                      onClick={() =>
-                        toast.success('Скачивание началось', {
-                          description: `Архив «${p.title}» готов к загрузке.`,
-                        })
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
+                      onClick={() => p.fileUrl && downloadFile(p.fileUrl, p.fileName || `${p.title}.zip`, p.title)}
+                      disabled={!p.fileUrl}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-50"
                     >
                       <Icon name="Download" size={15} />
                       Скачать
@@ -370,6 +400,7 @@ const Cabinet = () => {
                 </div>
               ))}
             </div>
+            )}
           </TabsContent>
 
           <TabsContent value="my-products">

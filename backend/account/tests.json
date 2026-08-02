@@ -17,6 +17,12 @@
       "method": "GET",
       "path": "/?resource=presence",
       "expectedStatus": 200
+    },
+    {
+      "name": "GET orders без токена",
+      "method": "GET",
+      "path": "/?resource=orders",
+      "expectedStatus": 401
     }
   ]
 }

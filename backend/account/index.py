@@ -433,9 +433,60 @@ def build_azvox_form(order_id: int, amount: float, description: str) -> dict:
 def handle_payment_create(event, cur, conn, headers_common, token):
     body = json.loads(event.get('body') or '{}')
     product_id = body.get('productId')
-    email = (body.get('email') or '').strip().lower()
     method = body.get('method', 'AZVOX')
 
+    user_row = get_user(cur, token)
+    user_id = user_row[0] if user_row else None
+
+    if method == 'BALANCE':
+        if not user_id:
+            return resp(401, {'error': 'Войдите в аккаунт, чтобы оплатить с баланса'}, headers_common)
+
+        cur.execute(
+            f"SELECT id, title, price, file_url, file_name FROM {SCHEMA}.products "
+            f"WHERE id = %s AND status = 'approved'",
+            (product_id,),
+        )
+        product = cur.fetchone()
+        if not product:
+            return resp(404, {'error': 'Товар не найден'}, headers_common)
+        if not product[3]:
+            return resp(400, {'error': 'Файл товара ещё не загружен продавцом'}, headers_common)
+
+        cur.execute(f"SELECT balance, email FROM {SCHEMA}.users WHERE id = %s FOR UPDATE", (user_id,))
+        balance, user_email = cur.fetchone()
+        price = float(product[2])
+        if float(balance) < price:
+            return resp(400, {'error': f'Недостаточно средств на балансе. Нужно {price:.0f} ₽'}, headers_common)
+
+        cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance - %s WHERE id = %s", (price, user_id))
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.orders (product_id, user_id, email, method, amount, status) "
+            f"VALUES (%s, %s, %s, 'BALANCE', %s, 'paid') RETURNING id",
+            (product_id, user_id, user_email, price),
+        )
+        order_id = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'purchase', %s, %s)",
+            (user_id, -price, f'Покупка «{product[1]}»'),
+        )
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, order_id, method, amount, status) "
+            f"VALUES ('order', %s, %s, 'BALANCE', %s, 'paid')",
+            (user_id, order_id, price),
+        )
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+            f"VALUES ('purchase', 'Новая покупка', %s, %s)",
+            (f"Заказ #{order_id} на {price:.0f} ₽ оплачен с баланса", order_id),
+        )
+        conn.commit()
+        return resp(200, {
+            'orderId': order_id, 'provider': 'BALANCE', 'paid': True,
+            'fileUrl': product[3], 'fileName': product[4],
+        }, headers_common)
+
+    email = (body.get('email') or '').strip().lower()
     if not product_id or '@' not in email:
         return resp(400, {'error': 'Укажите товар и корректный e-mail'}, headers_common)
 
@@ -446,9 +497,6 @@ def handle_payment_create(event, cur, conn, headers_common, token):
     product = cur.fetchone()
     if not product:
         return resp(404, {'error': 'Товар не найден'}, headers_common)
-
-    user_row = get_user(cur, token)
-    user_id = user_row[0] if user_row else None
 
     cur.execute(
         f"INSERT INTO {SCHEMA}.orders (product_id, user_id, email, method, amount, status) "
@@ -465,6 +513,27 @@ def handle_payment_create(event, cur, conn, headers_common, token):
         return resp(200, {'orderId': order_id, 'provider': 'AZVOX', 'form': form}, headers_common)
 
     return resp(400, {'error': 'Этот способ оплаты скоро будет доступен'}, headers_common)
+
+
+def handle_my_orders(cur, headers_common, token):
+    user_row = get_user(cur, token)
+    if not user_row:
+        return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+    user_id = user_row[0]
+    cur.execute(
+        f"SELECT o.id, p.title, o.amount, o.method, o.created_at, p.file_url, p.file_name "
+        f"FROM {SCHEMA}.orders o JOIN {SCHEMA}.products p ON p.id = o.product_id "
+        f"WHERE o.user_id = %s AND o.status = 'paid' ORDER BY o.created_at DESC",
+        (user_id,),
+    )
+    purchases = [
+        {
+            'id': r[0], 'title': r[1], 'amount': float(r[2]), 'method': r[3],
+            'date': r[4].strftime('%d.%m.%Y'), 'fileUrl': r[5], 'fileName': r[6],
+        }
+        for r in cur.fetchall()
+    ]
+    return resp(200, {'purchases': purchases}, headers_common)
 
 
 def handle_azvox_status(event, cur, conn):
@@ -707,6 +776,8 @@ def handler(event: dict, context):
             if payment_action == 'azvox-status':
                 return handle_azvox_status(event, cur, conn)
             return resp(400, {'error': 'Неизвестное действие оплаты'}, headers_common)
+        if resource == 'orders' and method == 'GET':
+            return handle_my_orders(cur, headers_common, token)
         return resp(400, {'error': 'Не указан или неизвестен resource'}, headers_common)
     finally:
         cur.close()

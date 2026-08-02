@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 import { Product, formatPrice } from './products';
 import { API } from '@/lib/api';
-import { getAuthToken } from '@/hooks/use-auth';
+import { getAuthToken, useAuth } from '@/hooks/use-auth';
 
 interface Props {
   product: Product | null;
@@ -21,19 +21,38 @@ interface Props {
 }
 
 const PAYMENTS = [
+  { id: 'BALANCE', label: 'С баланса', icon: 'Wallet', desc: 'Списание с баланса аккаунта, мгновенно' },
   { id: 'AZVOX', label: 'AZVOX', icon: 'Wallet', desc: 'Карты и электронные кошельки' },
   { id: 'ЮMoney', label: 'ЮMoney', icon: 'CreditCard', desc: 'Оплата картой или из кошелька' },
 ];
 
+const downloadFile = async (fileUrl: string, fileName: string) => {
+  const res = await fetch(fileUrl);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName || 'file';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
 const BuyDialog = ({ product, open, onOpenChange }: Props) => {
+  const { user, refreshUser } = useAuth();
   const [email, setEmail] = useState('');
-  const [method, setMethod] = useState('AZVOX');
+  const [method, setMethod] = useState(user ? 'BALANCE' : 'AZVOX');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (open) setMethod(user ? 'BALANCE' : 'AZVOX');
+  }, [open, user]);
+
   const submit = async () => {
     if (!product) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (method !== 'BALANCE' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Укажите корректный e-mail для получения ссылки');
       return;
     }
@@ -52,6 +71,16 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || 'Не удалось создать заказ');
+        return;
+      }
+
+      if (data.provider === 'BALANCE' && data.paid) {
+        await downloadFile(data.fileUrl, data.fileName || `${product.title}.zip`);
+        toast.success('Оплачено с баланса', {
+          description: `Файл «${product.title}» скачивается.`,
+        });
+        await refreshUser();
+        onOpenChange(false);
         return;
       }
 
@@ -103,7 +132,7 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         <div className="space-y-2">
           <Label>Способ оплаты</Label>
           <div className="grid grid-cols-2 gap-2">
-            {PAYMENTS.map((p) => (
+            {PAYMENTS.filter((p) => p.id !== 'BALANCE' || user).map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -118,23 +147,27 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
                   <Icon name={p.icon} size={16} />
                   {p.label}
                 </span>
-                <span className="text-xs text-muted-foreground">{p.desc}</span>
+                <span className="text-xs text-muted-foreground">
+                  {p.id === 'BALANCE' ? `Баланс: ${formatPrice(user?.balance || 0)}` : p.desc}
+                </span>
               </button>
             ))}
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="buy-email">E-mail для ссылки на скачивание</Label>
-          <Input
-            id="buy-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-          />
-          {error && <p className="text-xs text-destructive">{error}</p>}
-        </div>
+        {method !== 'BALANCE' && (
+          <div className="space-y-2">
+            <Label htmlFor="buy-email">E-mail для ссылки на скачивание</Label>
+            <Input
+              id="buy-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
+        )}
 
         <button
           onClick={submit}
@@ -142,7 +175,7 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
           className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
         >
           <Icon name="Download" size={18} />
-          {loading ? 'Переходим к оплате…' : 'Оплатить и скачать'}
+          {loading ? 'Оформляем покупку…' : method === 'BALANCE' ? 'Оплатить с баланса и скачать' : 'Оплатить и скачать'}
         </button>
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
           <Icon name="Lock" size={13} />
