@@ -5,6 +5,7 @@ import Icon from '@/components/ui/icon';
 import { Textarea } from '@/components/ui/textarea';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
+import UserLink from '@/components/site/UserLink';
 import { useAuth, getAuthToken } from '@/hooks/use-auth';
 import { API } from '@/lib/api';
 
@@ -25,6 +26,7 @@ interface Comment {
   text: string;
   createdAt: string;
   userName: string;
+  userId: number;
 }
 
 const NewsPost = () => {
@@ -188,7 +190,7 @@ const NewsPost = () => {
               {comments.map((c) => (
                 <div key={c.id} className="rounded-2xl border border-border bg-card p-4">
                   <div className="mb-1.5 flex items-center justify-between">
-                    <span className="font-head text-sm font-semibold text-foreground">{c.userName}</span>
+                    <UserLink userId={c.userId} name={c.userName} />
                     <span className="text-xs text-muted-foreground">{c.createdAt}</span>
                   </div>
                   <p className="text-sm text-muted-foreground">{c.text}</p>

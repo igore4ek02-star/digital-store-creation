@@ -15,4 +15,8 @@ export const API = {
   adTrack: `${funcUrls.account}?resource=ad-track`,
   news: `${funcUrls.account}?resource=news`,
   newsComments: `${funcUrls.account}?resource=news-comments`,
+  userProfile: `${funcUrls.messages}?resource=profile`,
+  conversations: `${funcUrls.messages}?resource=conversations`,
+  messageThread: `${funcUrls.messages}?resource=thread`,
+  sendMessage: funcUrls.messages,
 };

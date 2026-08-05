@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET без resource и токена",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    },
+    {
+      "name": "GET profile без userId",
+      "method": "GET",
+      "path": "/?resource=profile",
+      "expectedStatus": 400
+    },
+    {
+      "name": "GET conversations без токена",
+      "method": "GET",
+      "path": "/?resource=conversations",
+      "expectedStatus": 401
+    }
+  ]
+}

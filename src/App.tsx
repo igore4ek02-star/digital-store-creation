@@ -20,6 +20,9 @@ import ReviewsPage from "./pages/ReviewsPage";
 import NewsPage from "./pages/NewsPage";
 import NewsPost from "./pages/NewsPost";
 import Offer from "./pages/Offer";
+import UserProfile from "./pages/UserProfile";
+import Messages from "./pages/Messages";
+import MessageThread from "./pages/MessageThread";
 import NotFound from "./pages/NotFound";
 import OnlineWidget from "@/components/site/OnlineWidget";
 import PendingOrderWatcher from "@/components/site/PendingOrderWatcher";
@@ -69,6 +72,9 @@ const App = () => (
             <Route path="/news" element={<NewsPage />} />
             <Route path="/news/:slug" element={<NewsPost />} />
             <Route path="/offer" element={<Offer />} />
+            <Route path="/user/:id" element={<UserProfile />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/messages/:userId" element={<MessageThread />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

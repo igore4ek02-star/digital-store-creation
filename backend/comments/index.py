@@ -49,7 +49,7 @@ def handler(event: dict, context):
             if not product_id:
                 return resp(400, {'error': 'Не указан товар'}, headers_common)
             cur.execute(
-                f"SELECT c.id, c.text, c.created_at, u.name FROM {SCHEMA}.comments c "
+                f"SELECT c.id, c.text, c.created_at, u.name, u.id FROM {SCHEMA}.comments c "
                 f"JOIN {SCHEMA}.users u ON u.id = c.user_id "
                 f"WHERE c.product_id = %s ORDER BY c.created_at DESC",
                 (product_id,),
@@ -60,6 +60,7 @@ def handler(event: dict, context):
                     'text': r[1],
                     'createdAt': r[2].strftime('%d.%m.%Y %H:%M'),
                     'userName': r[3],
+                    'userId': r[4],
                 }
                 for r in cur.fetchall()
             ]
@@ -90,6 +91,7 @@ def handler(event: dict, context):
                     'text': row[1],
                     'createdAt': row[2].strftime('%d.%m.%Y %H:%M'),
                     'userName': name,
+                    'userId': user_id,
                 }
             }, headers_common)
 

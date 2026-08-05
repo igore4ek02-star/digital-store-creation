@@ -13,6 +13,7 @@ import { formatPrice } from '@/components/site/products';
 import { API } from '@/lib/api';
 import { getAuthToken } from '@/hooks/use-auth';
 import AdminGuard from '@/components/site/AdminGuard';
+import UserLink from '@/components/site/UserLink';
 
 interface UserRow {
   id: number;
@@ -81,7 +82,7 @@ const AdminUsers = () => {
               {users.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell>
-                    <p className="font-medium text-foreground">{u.name}</p>
+                    <UserLink userId={u.id} name={u.name} className="font-medium text-foreground hover:text-brand-cyan" />
                     <p className="text-xs text-muted-foreground">{u.email}</p>
                   </TableCell>
                   <TableCell className="hidden font-head font-semibold text-foreground sm:table-cell">

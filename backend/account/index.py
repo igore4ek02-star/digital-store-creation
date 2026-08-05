@@ -650,6 +650,7 @@ def news_comment_dict(row) -> dict:
         'text': row[1],
         'createdAt': row[2].strftime('%d.%m.%Y %H:%M'),
         'userName': row[3],
+        'userId': row[4] if len(row) > 4 else None,
     }
 
 
@@ -733,7 +734,7 @@ def handle_news_comments(event, cur, conn, method, headers_common, token, params
         if not news_id:
             return resp(400, {'error': 'Не указана новость'}, headers_common)
         cur.execute(
-            f"SELECT c.id, c.text, c.created_at, u.name FROM {SCHEMA}.news_comments c "
+            f"SELECT c.id, c.text, c.created_at, u.name, u.id FROM {SCHEMA}.news_comments c "
             f"JOIN {SCHEMA}.users u ON u.id = c.user_id WHERE c.news_id = %s ORDER BY c.created_at DESC",
             (news_id,),
         )
@@ -758,7 +759,7 @@ def handle_news_comments(event, cur, conn, method, headers_common, token, params
         cur.execute(f"SELECT name FROM {SCHEMA}.users WHERE id = %s", (user_id,))
         name = cur.fetchone()[0]
         conn.commit()
-        return resp(200, {'comment': news_comment_dict((row[0], row[1], row[2], name))}, headers_common)
+        return resp(200, {'comment': news_comment_dict((row[0], row[1], row[2], name, user_id))}, headers_common)
 
     return resp(405, {'error': 'Метод не поддерживается'}, headers_common)
 

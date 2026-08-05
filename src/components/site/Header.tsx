@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth, getAuthToken } from '@/hooks/use-auth';
 import ProposeProductDialog from '@/components/site/ProposeProductDialog';
 import ProductMediaDialog from '@/components/site/ProductMediaDialog';
+import { API } from '@/lib/api';
 
 const NAV = [
   { label: 'Каталог', href: '#catalog' },
@@ -23,12 +24,35 @@ const Header = () => {
   const [proposeOpen, setProposeOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+    const loadUnread = () => {
+      fetch(API.conversations, { headers: { 'X-Authorization': `Bearer ${getAuthToken()}` } })
+        .then((r) => r.json())
+        .then((d) => {
+          const total = (d.conversations || []).reduce(
+            (sum: number, c: { unreadCount: number }) => sum + c.unreadCount,
+            0,
+          );
+          setUnreadCount(total);
+        })
+        .catch(() => {});
+    };
+    loadUnread();
+    const interval = setInterval(loadUnread, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const scrollTo = (href: string) => {
     setOpen(false);
@@ -86,6 +110,20 @@ const Header = () => {
             <Icon name="Plus" size={15} />
             Добавить товар
           </button>
+          {user && (
+            <Link
+              to="/messages"
+              className="relative hidden h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan md:inline-flex"
+              aria-label="Личные сообщения"
+            >
+              <Icon name="MessageCircle" size={17} />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {unreadCount}
+                </span>
+              )}
+            </Link>
+          )}
           <Link
             to={user ? '/cabinet' : '/auth'}
             className="hidden items-center gap-2 rounded-full border border-border px-4 py-2 font-head text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan md:inline-flex"
@@ -152,6 +190,21 @@ const Header = () => {
               <Icon name="Plus" size={17} />
               Добавить товар
             </button>
+            {user && (
+              <Link
+                to="/messages"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2 rounded-lg px-3 py-3 text-left font-head text-base uppercase tracking-wide text-foreground"
+              >
+                <Icon name="MessageCircle" size={17} />
+                Сообщения
+                {unreadCount > 0 && (
+                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
+                    {unreadCount}
+                  </span>
+                )}
+              </Link>
+            )}
             <Link
               to={user ? '/cabinet' : '/auth'}
               onClick={() => setOpen(false)}

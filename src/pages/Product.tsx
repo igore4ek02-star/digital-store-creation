@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import BuyDialog from '@/components/site/BuyDialog';
+import UserLink from '@/components/site/UserLink';
 import { Product as ProductType, fetchProductBySlug, formatPrice } from '@/components/site/products';
 import { useAuth, getAuthToken } from '@/hooks/use-auth';
 import { API } from '@/lib/api';
@@ -15,6 +16,7 @@ interface Comment {
   text: string;
   createdAt: string;
   userName: string;
+  userId: number;
 }
 
 const ProductPage = () => {
@@ -254,9 +256,7 @@ const ProductPage = () => {
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-cyan/15 font-head text-xs font-bold text-brand-cyan">
                       {c.userName.charAt(0).toUpperCase()}
                     </span>
-                    <span className="font-head text-sm font-semibold text-foreground">
-                      {c.userName}
-                    </span>
+                    <UserLink userId={c.userId} name={c.userName} />
                     <span className="text-xs text-muted-foreground">{c.createdAt}</span>
                   </div>
                   <p className="text-sm text-muted-foreground">{c.text}</p>
