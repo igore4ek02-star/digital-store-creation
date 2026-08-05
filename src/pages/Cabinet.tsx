@@ -1,84 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { useAuth, getAuthToken } from '@/hooks/use-auth';
 import { formatPrice, Product } from '@/components/site/products';
 import { API } from '@/lib/api';
 import ProposeProductDialog from '@/components/site/ProposeProductDialog';
 import ProductMediaDialog from '@/components/site/ProductMediaDialog';
-
-interface Purchase {
-  id: number;
-  title: string;
-  amount: number;
-  method: string;
-  date: string;
-  fileUrl: string | null;
-  fileName: string | null;
-}
-
-const downloadFile = async (fileUrl: string, fileName: string, title: string) => {
-  try {
-    const res = await fetch(fileUrl);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName || 'file';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast.success('Скачивание началось', {
-      description: `Файл «${title}» загружается.`,
-    });
-  } catch {
-    toast.error('Не удалось скачать файл');
-  }
-};
-
-const PAYMENTS = [
-  { id: 'AZVOX', label: 'AZVOX', desc: 'Карты и электронные кошельки' },
-  { id: 'ЮMoney', label: 'ЮMoney', desc: 'Оплата картой или из кошелька' },
-] as const;
-
-interface Transaction {
-  id: number;
-  type: string;
-  amount: number;
-  description: string;
-  createdAt: string;
-}
-
-interface Payout {
-  id: number;
-  amount: number;
-  method: string;
-  wallet: string;
-  status: string;
-  createdAt: string;
-}
-
-interface Ticket {
-  id: number;
-  subject: string;
-  message: string;
-  status: string;
-  adminReply: string | null;
-  createdAt: string;
-}
+import CabinetPurchasesTab, { Purchase } from '@/components/cabinet/CabinetPurchasesTab';
+import CabinetProductsTab from '@/components/cabinet/CabinetProductsTab';
+import CabinetWalletTab, { Transaction, Payout } from '@/components/cabinet/CabinetWalletTab';
+import CabinetSupportTab, { Ticket } from '@/components/cabinet/CabinetSupportTab';
 
 const authHeaders = () => ({
   'Content-Type': 'application/json',
@@ -266,14 +199,6 @@ const Cabinet = () => {
     { label: 'На счету с', value: user.createdAt, icon: 'CalendarDays' },
   ];
 
-  const ticketStatusLabel = (s: string) =>
-    s === 'open' ? 'Открыт' : s === 'answered' ? 'Есть ответ' : 'Закрыт';
-  const ticketStatusColor = (s: string) =>
-    s === 'open' ? 'text-primary' : s === 'answered' ? 'text-brand-green' : 'text-muted-foreground';
-
-  const payoutStatusLabel = (s: string) =>
-    s === 'pending' ? 'В обработке' : s === 'completed' ? 'Выплачено' : 'Отклонено';
-
   return (
     <div className="min-h-screen bg-background font-body">
       <header className="sticky top-0 z-40 border-b border-border bg-[#16191c]">
@@ -356,393 +281,48 @@ const Cabinet = () => {
             <TabsTrigger value="profile">Профиль</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="purchases">
-            <p className="mb-4 text-sm text-muted-foreground">
-              Купленные товары доступны для повторного скачивания в любое время.
-            </p>
-            {purchasesLoading ? (
-              <div className="h-32 animate-pulse rounded-2xl border border-border bg-card" />
-            ) : purchases.length === 0 ? (
-              <p className="text-sm text-muted-foreground">У вас пока нет покупок.</p>
-            ) : (
-            <div className="space-y-3">
-              {purchases.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-center gap-4">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                      <Icon name="FileCode2" size={22} />
-                    </span>
-                    <div>
-                      <p className="font-head font-semibold uppercase tracking-wide text-foreground">
-                        {p.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        #{p.id} · {p.date} · оплата {p.method === 'BALANCE' ? 'с баланса' : p.method}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 sm:justify-end">
-                    <span className="font-head font-bold text-foreground">
-                      {formatPrice(p.amount)}
-                    </span>
-                    <button
-                      onClick={() => p.fileUrl && downloadFile(p.fileUrl, p.fileName || `${p.title}.zip`, p.title)}
-                      disabled={!p.fileUrl}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-50"
-                    >
-                      <Icon name="Download" size={15} />
-                      Скачать
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            )}
-          </TabsContent>
+          <CabinetPurchasesTab purchases={purchases} purchasesLoading={purchasesLoading} />
 
-          <TabsContent value="my-products">
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Статус ваших товаров, отправленных на модерацию.
-              </p>
-              <button
-                onClick={() => setProposeOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
-              >
-                <Icon name="Plus" size={16} />
-                Предложить товар
-              </button>
-            </div>
-            {myProductsLoading ? (
-              <div className="h-32 animate-pulse rounded-2xl border border-border bg-card" />
-            ) : myProducts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Вы пока не предлагали товары.</p>
-            ) : (
-              <div className="space-y-3">
-                {myProducts.map((p) => {
-                  const statusLabel =
-                    ({ approved: 'Опубликован', pending: 'На модерации', rejected: 'Отклонён' } as Record<
-                      string,
-                      string
-                    >)[p.status || ''] || p.status;
-                  const statusColor =
-                    p.status === 'approved'
-                      ? 'text-brand-green'
-                      : p.status === 'pending'
-                        ? 'text-primary'
-                        : 'text-destructive';
-                  return (
-                    <div
-                      key={p.id}
-                      className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="flex items-center gap-4">
-                        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                          <Icon name={p.icon} size={22} />
-                        </span>
-                        <div>
-                          <p className="font-head font-semibold uppercase tracking-wide text-foreground">
-                            {p.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {p.category} · {formatPrice(p.price)}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`text-sm font-medium ${statusColor}`}>{statusLabel}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
+          <CabinetProductsTab
+            myProducts={myProducts}
+            myProductsLoading={myProductsLoading}
+            onPropose={() => setProposeOpen(true)}
+          />
 
-          <TabsContent value="wallet">
-            {walletLoading ? (
-              <div className="h-32 animate-pulse rounded-2xl border border-border bg-card" />
-            ) : (
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div>
-                  <h3 className="mb-3 font-head text-sm font-semibold uppercase tracking-wide text-foreground">
-                    История операций
-                  </h3>
-                  {transactions.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Пока нет операций.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {transactions.map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3"
-                        >
-                          <div>
-                            <p className="text-sm text-foreground">{t.description}</p>
-                            <p className="text-xs text-muted-foreground">{t.createdAt}</p>
-                          </div>
-                          <span
-                            className={`font-head text-sm font-bold ${t.amount >= 0 ? 'text-brand-green' : 'text-destructive'}`}
-                          >
-                            {t.amount >= 0 ? '+' : ''}
-                            {formatPrice(t.amount)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <h3 className="mb-3 font-head text-sm font-semibold uppercase tracking-wide text-foreground">
-                    Заявки на выплату
-                  </h3>
-                  {payouts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Заявок пока нет.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {payouts.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3"
-                        >
-                          <div>
-                            <p className="text-sm text-foreground">
-                              {p.method} · {p.wallet}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{p.createdAt}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-head text-sm font-bold text-foreground">
-                              {formatPrice(p.amount)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{payoutStatusLabel(p.status)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </TabsContent>
+          <CabinetWalletTab
+            transactions={transactions}
+            payouts={payouts}
+            walletLoading={walletLoading}
+            topupOpen={topupOpen}
+            setTopupOpen={setTopupOpen}
+            payoutOpen={payoutOpen}
+            setPayoutOpen={setPayoutOpen}
+            amount={amount}
+            setAmount={setAmount}
+            method={method}
+            setMethod={setMethod}
+            wallet={wallet}
+            setWallet={setWallet}
+            submitting={submitting}
+            doTopup={doTopup}
+            doPayout={doPayout}
+          />
 
-          <TabsContent value="support">
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">Ваши обращения в поддержку</p>
-              <button
-                onClick={() => setTicketOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
-              >
-                <Icon name="Plus" size={16} />
-                Новое обращение
-              </button>
-            </div>
-            {ticketsLoading ? (
-              <div className="h-32 animate-pulse rounded-2xl border border-border bg-card" />
-            ) : tickets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Обращений пока нет.</p>
-            ) : (
-              <div className="space-y-3">
-                {tickets.map((t) => (
-                  <div key={t.id} className="rounded-2xl border border-border bg-card p-5">
-                    <div className="mb-1.5 flex items-center justify-between gap-3">
-                      <p className="font-head font-semibold uppercase tracking-wide text-foreground">
-                        {t.subject}
-                      </p>
-                      <span className={`text-xs font-medium ${ticketStatusColor(t.status)}`}>
-                        {ticketStatusLabel(t.status)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{t.createdAt}</p>
-                    <p className="mt-2 text-sm text-muted-foreground">{t.message}</p>
-                    {t.adminReply && (
-                      <div className="mt-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 p-3">
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-brand-cyan">
-                          Ответ поддержки
-                        </p>
-                        <p className="text-sm text-foreground">{t.adminReply}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="profile">
-            <div className="max-w-lg space-y-4 rounded-2xl border border-border bg-card p-6">
-              <div className="space-y-2">
-                <Label>Имя</Label>
-                <Input defaultValue={user.name} />
-              </div>
-              <div className="space-y-2">
-                <Label>E-mail</Label>
-                <Input defaultValue={user.email} type="email" />
-              </div>
-              <button
-                onClick={() => toast.success('Профиль сохранён')}
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
-              >
-                <Icon name="Check" size={16} />
-                Сохранить
-              </button>
-            </div>
-          </TabsContent>
+          <CabinetSupportTab
+            tickets={tickets}
+            ticketsLoading={ticketsLoading}
+            user={user}
+            ticketOpen={ticketOpen}
+            setTicketOpen={setTicketOpen}
+            subject={subject}
+            setSubject={setSubject}
+            message={message}
+            setMessage={setMessage}
+            ticketSubmitting={ticketSubmitting}
+            submitTicket={submitTicket}
+          />
         </Tabs>
       </main>
-
-      {/* Пополнение баланса */}
-      <Dialog open={topupOpen} onOpenChange={setTopupOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-head text-xl uppercase tracking-wide">
-              Пополнить баланс
-            </DialogTitle>
-            <DialogDescription>
-              Выберите систему оплаты и укажите сумму пополнения.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>Система оплаты</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENTS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setMethod(p.id)}
-                  className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
-                    method === p.id
-                      ? 'border-brand-cyan bg-brand-cyan/10'
-                      : 'border-border hover:border-brand-cyan/40'
-                  }`}
-                >
-                  <span className="font-head text-sm font-semibold">{p.label}</span>
-                  <span className="text-xs text-muted-foreground">{p.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="topup-amount">Сумма, ₽</Label>
-            <Input
-              id="topup-amount"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="1000"
-            />
-          </div>
-          <button
-            onClick={doTopup}
-            disabled={submitting}
-            className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
-          >
-            <Icon name="CreditCard" size={18} />
-            Пополнить
-          </button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Выплата */}
-      <Dialog open={payoutOpen} onOpenChange={setPayoutOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-head text-xl uppercase tracking-wide">
-              Вывод средств
-            </DialogTitle>
-            <DialogDescription>
-              Заявка на выплату на кошелёк AZVOX или ЮMoney.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>Куда вывести</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENTS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setMethod(p.id)}
-                  className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
-                    method === p.id
-                      ? 'border-brand-cyan bg-brand-cyan/10'
-                      : 'border-border hover:border-brand-cyan/40'
-                  }`}
-                >
-                  <span className="font-head text-sm font-semibold">{p.label}</span>
-                  <span className="text-xs text-muted-foreground">{p.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="payout-wallet">Номер кошелька / карты</Label>
-            <Input
-              id="payout-wallet"
-              value={wallet}
-              onChange={(e) => setWallet(e.target.value)}
-              placeholder="Например: 4100 1234 5678"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="payout-amount">Сумма, ₽</Label>
-            <Input
-              id="payout-amount"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="500"
-            />
-          </div>
-          <button
-            onClick={doPayout}
-            disabled={submitting}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-green px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
-          >
-            <Icon name="Banknote" size={18} />
-            Создать заявку
-          </button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Новое обращение в поддержку */}
-      <Dialog open={ticketOpen} onOpenChange={setTicketOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-head text-xl uppercase tracking-wide">
-              Обращение в поддержку
-            </DialogTitle>
-            <DialogDescription>Опишите вопрос — ответим в ближайшее время.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="ticket-subject">Тема</Label>
-            <Input
-              id="ticket-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Например: Не пришла ссылка на скачивание"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ticket-message">Сообщение</Label>
-            <Textarea
-              id="ticket-message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Опишите подробнее"
-              className="min-h-28"
-            />
-          </div>
-          <button
-            onClick={submitTicket}
-            disabled={ticketSubmitting}
-            className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
-          >
-            <Icon name="Send" size={18} />
-            Отправить
-          </button>
-        </DialogContent>
-      </Dialog>
 
       <ProposeProductDialog
         open={proposeOpen}
