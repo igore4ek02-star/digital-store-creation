@@ -110,6 +110,20 @@ def upload_product_file(file_base64: str, file_name: str) -> str:
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
+FILE_CONTENT_TYPES = {
+    'zip': 'application/zip', 'rar': 'application/vnd.rar', '7z': 'application/x-7z-compressed',
+}
+
+
+def get_s3():
+    return boto3.client(
+        's3',
+        endpoint_url='https://bucket.poehali.dev',
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
 def handler(event: dict, context):
     """Каталог товаров: список (только одобренные), карточка товара, мастер добавления (черновик → медиа → модерация), CRUD в админке"""
     method = event.get('httpMethod', 'GET')
@@ -267,6 +281,91 @@ def handler(event: dict, context):
                 )
                 conn.commit()
                 return resp(200, {'fileUrl': url, 'fileName': file_name}, headers_common)
+
+            if action == 'upload-file-init':
+                user_row = get_user(cur, token)
+                if not user_row:
+                    return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+                product_id = body.get('productId')
+                file_name = (body.get('fileName') or 'archive.zip').strip()
+                if not product_id:
+                    return resp(400, {'error': 'Не указан товар'}, headers_common)
+                ext = (file_name.rsplit('.', 1)[-1] if '.' in file_name else 'zip').lower()
+                key = f"products/files/{uuid.uuid4().hex}-{file_name}"
+                s3 = get_s3()
+                created = s3.create_multipart_upload(
+                    Bucket='files', Key=key,
+                    ContentType=FILE_CONTENT_TYPES.get(ext, 'application/octet-stream'),
+                )
+                return resp(200, {'uploadId': created['UploadId'], 'key': key}, headers_common)
+
+            if action == 'upload-file-part':
+                user_row = get_user(cur, token)
+                if not user_row:
+                    return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+                key = body.get('key')
+                upload_id = body.get('uploadId')
+                part_number = body.get('partNumber')
+                part_b64 = body.get('data')
+                if not key or not upload_id or not part_number or not part_b64:
+                    return resp(400, {'error': 'Не хватает данных части файла'}, headers_common)
+                if ',' in part_b64:
+                    _, part_b64 = part_b64.split(',', 1)
+                data = base64.b64decode(part_b64)
+                s3 = get_s3()
+                try:
+                    part = s3.upload_part(
+                        Bucket='files', Key=key, UploadId=upload_id,
+                        PartNumber=int(part_number), Body=data,
+                    )
+                except Exception:
+                    return resp(400, {'error': 'Не удалось загрузить часть файла'}, headers_common)
+                return resp(200, {'etag': part['ETag'], 'partNumber': int(part_number)}, headers_common)
+
+            if action == 'upload-file-complete':
+                user_row = get_user(cur, token)
+                if not user_row:
+                    return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+                product_id = body.get('productId')
+                key = body.get('key')
+                upload_id = body.get('uploadId')
+                parts = body.get('parts') or []
+                file_name = (body.get('fileName') or 'archive.zip').strip()
+                if not product_id or not key or not upload_id or not parts:
+                    return resp(400, {'error': 'Не хватает данных для завершения загрузки'}, headers_common)
+                s3 = get_s3()
+                try:
+                    s3.complete_multipart_upload(
+                        Bucket='files', Key=key, UploadId=upload_id,
+                        MultipartUpload={
+                            'Parts': [
+                                {'ETag': p['etag'], 'PartNumber': p['partNumber']} for p in parts
+                            ]
+                        },
+                    )
+                except Exception:
+                    return resp(400, {'error': 'Не удалось завершить загрузку файла'}, headers_common)
+                url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+                cur.execute(
+                    f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s WHERE id = %s",
+                    (url, file_name, product_id),
+                )
+                conn.commit()
+                return resp(200, {'fileUrl': url, 'fileName': file_name}, headers_common)
+
+            if action == 'upload-file-abort':
+                user_row = get_user(cur, token)
+                if not user_row:
+                    return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+                key = body.get('key')
+                upload_id = body.get('uploadId')
+                if key and upload_id:
+                    s3 = get_s3()
+                    try:
+                        s3.abort_multipart_upload(Bucket='files', Key=key, UploadId=upload_id)
+                    except Exception:
+                        pass
+                return resp(200, {'ok': True}, headers_common)
 
             if action == 'submit-for-moderation':
                 user_row = get_user(cur, token)

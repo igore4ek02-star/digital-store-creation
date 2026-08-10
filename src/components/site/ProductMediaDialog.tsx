@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { API } from '@/lib/api';
 interface ProductDraft {
   id: number;
   title: string;
+  status?: string;
 }
 
 interface Props {
@@ -42,11 +43,22 @@ const authHeaders = () => ({
   'X-Authorization': `Bearer ${getAuthToken()}`,
 });
 
+const CHUNK_SIZE = 5 * 1024 * 1024;
+
+const readSliceAsBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
 const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props) => {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +68,20 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
     setImages([]);
     setFileName(null);
   };
+
+  useEffect(() => {
+    if (!product || !open) return;
+    fetch(`${API.products}?id=${product.id}`, { headers: { 'X-Authorization': `Bearer ${getAuthToken()}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.product) {
+          setImages(d.product.imageIds || []);
+          setFileName(d.product.fileName || null);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id, open]);
 
   const onImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -99,6 +125,75 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
     setImages((prev) => prev.filter((i) => i.id !== imageId));
   };
 
+  const uploadFileChunked = async (file: File) => {
+    if (!product) return;
+    const initRes = await fetch(API.products, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action: 'upload-file-init', productId: product.id, fileName: file.name }),
+    });
+    const initData = await initRes.json();
+    if (!initRes.ok) {
+      toast.error(initData.error || 'Не удалось начать загрузку файла');
+      return;
+    }
+    const { uploadId, key } = initData;
+
+    const totalParts = Math.ceil(file.size / CHUNK_SIZE);
+    const parts: { etag: string; partNumber: number }[] = [];
+    try {
+      for (let i = 0; i < totalParts; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const blob = file.slice(start, end);
+        const base64 = await readSliceAsBase64(blob);
+        const partRes = await fetch(API.products, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            action: 'upload-file-part',
+            key,
+            uploadId,
+            partNumber: i + 1,
+            data: base64,
+          }),
+        });
+        const partData = await partRes.json();
+        if (!partRes.ok) {
+          throw new Error(partData.error || 'Не удалось загрузить часть файла');
+        }
+        parts.push({ etag: partData.etag, partNumber: partData.partNumber });
+        setUploadProgress(Math.round(((i + 1) / totalParts) * 100));
+      }
+
+      const completeRes = await fetch(API.products, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          action: 'upload-file-complete',
+          productId: product.id,
+          key,
+          uploadId,
+          parts,
+          fileName: file.name,
+        }),
+      });
+      const completeData = await completeRes.json();
+      if (!completeRes.ok) {
+        throw new Error(completeData.error || 'Не удалось завершить загрузку файла');
+      }
+      setFileName(completeData.fileName);
+      toast.success('Файл товара загружен');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось загрузить файл');
+      fetch(API.products, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'upload-file-abort', key, uploadId }),
+      }).catch(() => {});
+    }
+  };
+
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !product) return;
@@ -107,35 +202,43 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       toast.error('Поддерживаются архивы ZIP, RAR, 7Z');
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('Файл слишком большой (максимум 50 МБ)');
+    if (file.size > 200 * 1024 * 1024) {
+      toast.error('Файл слишком большой (максимум 200 МБ)');
       return;
     }
     setUploadingFile(true);
+    setUploadProgress(0);
     try {
-      const base64 = await readAsBase64(file);
-      const res = await fetch(API.products, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          action: 'upload-file',
-          productId: product.id,
-          file: base64,
-          fileName: file.name,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || 'Не удалось загрузить файл');
-        return;
+      if (file.size > CHUNK_SIZE) {
+        await uploadFileChunked(file);
+      } else {
+        const base64 = await readAsBase64(file);
+        const res = await fetch(API.products, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            action: 'upload-file',
+            productId: product.id,
+            file: base64,
+            fileName: file.name,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(data.error || 'Не удалось загрузить файл');
+          return;
+        }
+        setFileName(data.fileName);
+        toast.success('Файл товара загружен');
       }
-      setFileName(data.fileName);
-      toast.success('Файл товара загружен');
     } finally {
       setUploadingFile(false);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const isDraft = !product?.status || product.status === 'draft';
 
   const submit = async () => {
     if (!product) return;
@@ -147,6 +250,15 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       toast.error('Загрузите файл товара (архив)');
       return;
     }
+
+    if (!isDraft) {
+      reset();
+      onOpenChange(false);
+      onSubmitted();
+      toast.success('Медиафайлы обновлены');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch(API.products, {
@@ -182,7 +294,9 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
             «{product.title}» — медиафайлы
           </DialogTitle>
           <DialogDescription>
-            Добавьте скриншоты и файл товара, затем отправьте на модерацию.
+            {isDraft
+              ? 'Добавьте скриншоты и файл товара, затем отправьте на модерацию.'
+              : 'Обновите скриншоты или файл товара.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -233,13 +347,19 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
               className="hidden"
               onChange={onFileChange}
             />
-            {fileName ? (
+            {fileName && !uploadingFile ? (
               <div className="flex items-center justify-between rounded-lg border border-brand-green/40 bg-brand-green/5 px-4 py-3">
                 <span className="flex items-center gap-2 text-sm text-foreground">
                   <Icon name="FileArchive" size={16} className="text-brand-green" />
                   {fileName}
                 </span>
-                <Icon name="Check" size={16} className="text-brand-green" />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs font-medium text-brand-cyan transition-colors hover:underline"
+                >
+                  Заменить
+                </button>
               </div>
             ) : (
               <button
@@ -249,7 +369,17 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
                 className="flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan disabled:opacity-60"
               >
                 <Icon name={uploadingFile ? 'Loader2' : 'FileUp'} size={20} className={uploadingFile ? 'animate-spin' : ''} />
-                <span className="text-xs">{uploadingFile ? 'Загрузка…' : 'Загрузить ZIP / RAR / 7Z, до 50 МБ'}</span>
+                <span className="text-xs">
+                  {uploadingFile ? `Загрузка… ${uploadProgress > 0 ? `${uploadProgress}%` : ''}` : 'Загрузить ZIP / RAR / 7Z, до 200 МБ'}
+                </span>
+                {uploadingFile && uploadProgress > 0 && (
+                  <div className="mt-1 h-1.5 w-2/3 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-brand-cyan transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                )}
               </button>
             )}
           </div>
@@ -260,15 +390,15 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
             onClick={() => onOpenChange(false)}
             className="rounded-lg border border-border px-4 py-2.5 font-head text-sm font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
           >
-            Позже
+            {isDraft ? 'Позже' : 'Закрыть'}
           </button>
           <button
             onClick={submit}
             disabled={submitting}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
           >
-            <Icon name="Send" size={15} />
-            Отправить на модерацию
+            <Icon name={isDraft ? 'Send' : 'Check'} size={15} />
+            {isDraft ? 'Отправить на модерацию' : 'Сохранить'}
           </button>
         </DialogFooter>
       </DialogContent>

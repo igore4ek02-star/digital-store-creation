@@ -52,7 +52,7 @@ const Admin = () => {
   const [saving, setSaving] = useState(false);
 
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
+  const [draftProduct, setDraftProduct] = useState<{ id: number; title: string; status?: string } | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -159,7 +159,7 @@ const Admin = () => {
   };
 
   const continueMedia = (p: Product) => {
-    setDraftProduct({ id: p.id, title: p.title });
+    setDraftProduct({ id: p.id, title: p.title, status: p.status });
     setMediaOpen(true);
   };
 
@@ -233,15 +233,13 @@ const Admin = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      {p.status === 'draft' && (
-                        <button
-                          onClick={() => continueMedia(p)}
-                          className="flex h-8 items-center gap-1.5 rounded-lg border border-brand-cyan/40 px-2.5 text-xs font-medium text-brand-cyan transition-colors hover:bg-brand-cyan/10"
-                        >
-                          <Icon name="Upload" size={13} />
-                          Медиа
-                        </button>
-                      )}
+                      <button
+                        onClick={() => continueMedia(p)}
+                        className="flex h-8 items-center gap-1.5 rounded-lg border border-brand-cyan/40 px-2.5 text-xs font-medium text-brand-cyan transition-colors hover:bg-brand-cyan/10"
+                      >
+                        <Icon name="Upload" size={13} />
+                        Медиа
+                      </button>
                       <button
                         onClick={() => openEdit(p)}
                         className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
