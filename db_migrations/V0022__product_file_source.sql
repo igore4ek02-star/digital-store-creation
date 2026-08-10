@@ -1,0 +1,1 @@
+ALTER TABLE products ADD COLUMN IF NOT EXISTS file_source VARCHAR(10) NOT NULL DEFAULT 'upload';

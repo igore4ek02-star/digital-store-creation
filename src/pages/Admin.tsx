@@ -28,13 +28,19 @@ import { getAuthToken } from '@/hooks/use-auth';
 const emptyForm = { title: '', desc: '', fullDescription: '', price: '', category: 'Скрипты', icon: 'FileCode2' };
 
 const statusLabel = (s: string) =>
-  ({ approved: 'Опубликован', pending: 'На модерации', draft: 'Черновик', rejected: 'Отклонён' }[s] || s);
+  ({
+    approved: 'Опубликован',
+    pending: 'На модерации',
+    draft: 'Черновик',
+    rejected: 'Отклонён',
+    archived: 'В архиве',
+  }[s] || s);
 const statusColor = (s: string) =>
   s === 'approved'
     ? 'text-brand-green'
     : s === 'pending'
       ? 'text-primary'
-      : s === 'draft'
+      : s === 'draft' || s === 'archived'
         ? 'text-muted-foreground'
         : 'text-destructive';
 
@@ -150,12 +156,18 @@ const Admin = () => {
       method: 'DELETE',
       headers: authHeaders(),
     });
+    const data = await res.json();
     if (!res.ok) {
-      toast.error('Не удалось удалить товар');
+      toast.error(data.error || 'Не удалось удалить товар');
       return;
     }
-    toast.success('Товар удалён');
-    setProducts((prev) => prev.filter((p) => p.id !== id));
+    if (data.archived) {
+      toast.success(data.message || 'Товар скрыт из каталога (архивирован)');
+      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'archived' } : p)));
+    } else {
+      toast.success('Товар удалён');
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    }
   };
 
   const continueMedia = (p: Product) => {

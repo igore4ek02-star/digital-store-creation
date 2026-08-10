@@ -31,6 +31,21 @@ def get_user(cur, token: str):
     return cur.fetchone()
 
 
+def make_unique_slug(cur, title: str) -> str:
+    slug_base = title.lower().replace(' ', '-').replace('«', '').replace('»', '')
+    slug_base = ''.join(c for c in slug_base if c.isalnum() or c == '-').strip('-')
+    if not slug_base:
+        slug_base = f"product-{uuid.uuid4().hex[:6]}"
+    slug = slug_base
+    suffix = 1
+    while True:
+        cur.execute(f"SELECT 1 FROM {SCHEMA}.products WHERE slug = %s", (slug,))
+        if not cur.fetchone():
+            return slug
+        suffix += 1
+        slug = f"{slug_base}-{suffix}"
+
+
 def product_dict(row) -> dict:
     return {
         'id': row[0],
@@ -48,12 +63,13 @@ def product_dict(row) -> dict:
         'status': row[12] if len(row) > 12 else 'approved',
         'fileUrl': row[13] if len(row) > 13 else None,
         'fileName': row[14] if len(row) > 14 else None,
+        'fileSource': row[15] if len(row) > 15 else 'upload',
     }
 
 
 PRODUCT_FIELDS = (
     "id, title, slug, description, full_description, price, category, "
-    "icon, tag, rating, sales, cover_image, status, file_url, file_name"
+    "icon, tag, rating, sales, cover_image, status, file_url, file_name, file_source"
 )
 
 
@@ -208,8 +224,7 @@ def handler(event: dict, context):
                 price = body.get('price')
                 if len(title) < 2 or not price:
                     return resp(400, {'error': 'Заполните название и цену'}, headers_common)
-                slug_base = title.lower().replace(' ', '-').replace('«', '').replace('»', '')
-                slug = ''.join(c for c in slug_base if c.isalnum() or c == '-') or f"product-{uuid.uuid4().hex[:6]}"
+                slug = make_unique_slug(cur, title)
                 cur.execute(
                     f"INSERT INTO {SCHEMA}.products (title, slug, description, full_description, price, "
                     f"category, icon, seller_id, status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'draft') "
@@ -276,11 +291,28 @@ def handler(event: dict, context):
                 except Exception:
                     return resp(400, {'error': 'Не удалось загрузить файл'}, headers_common)
                 cur.execute(
-                    f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s WHERE id = %s",
+                    f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s, file_source = 'upload' WHERE id = %s",
                     (url, file_name, product_id),
                 )
                 conn.commit()
                 return resp(200, {'fileUrl': url, 'fileName': file_name}, headers_common)
+
+            if action == 'set-file-link':
+                user_row = get_user(cur, token)
+                if not user_row:
+                    return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+                product_id = body.get('productId')
+                link = (body.get('link') or '').strip()
+                if not product_id or not link:
+                    return resp(400, {'error': 'Укажите товар и ссылку на файл'}, headers_common)
+                if not (link.startswith('http://') or link.startswith('https://')):
+                    return resp(400, {'error': 'Ссылка должна начинаться с http:// или https://'}, headers_common)
+                cur.execute(
+                    f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s, file_source = 'link' WHERE id = %s",
+                    (link, 'Ссылка на скачивание', product_id),
+                )
+                conn.commit()
+                return resp(200, {'fileUrl': link, 'fileName': 'Ссылка на скачивание'}, headers_common)
 
             if action == 'upload-file-init':
                 user_row = get_user(cur, token)
@@ -290,64 +322,66 @@ def handler(event: dict, context):
                 file_name = (body.get('fileName') or 'archive.zip').strip()
                 if not product_id:
                     return resp(400, {'error': 'Не указан товар'}, headers_common)
-                ext = (file_name.rsplit('.', 1)[-1] if '.' in file_name else 'zip').lower()
-                key = f"products/files/{uuid.uuid4().hex}-{file_name}"
-                s3 = get_s3()
-                created = s3.create_multipart_upload(
-                    Bucket='files', Key=key,
-                    ContentType=FILE_CONTENT_TYPES.get(ext, 'application/octet-stream'),
-                )
-                return resp(200, {'uploadId': created['UploadId'], 'key': key}, headers_common)
+                session_id = uuid.uuid4().hex
+                return resp(200, {'uploadId': session_id, 'key': f"products/files/tmp/{session_id}"}, headers_common)
 
             if action == 'upload-file-part':
                 user_row = get_user(cur, token)
                 if not user_row:
                     return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
-                key = body.get('key')
                 upload_id = body.get('uploadId')
                 part_number = body.get('partNumber')
                 part_b64 = body.get('data')
-                if not key or not upload_id or not part_number or not part_b64:
+                if not upload_id or not part_number or not part_b64:
                     return resp(400, {'error': 'Не хватает данных части файла'}, headers_common)
                 if ',' in part_b64:
                     _, part_b64 = part_b64.split(',', 1)
                 data = base64.b64decode(part_b64)
                 s3 = get_s3()
                 try:
-                    part = s3.upload_part(
-                        Bucket='files', Key=key, UploadId=upload_id,
-                        PartNumber=int(part_number), Body=data,
+                    s3.put_object(
+                        Bucket='files',
+                        Key=f"products/files/tmp/{upload_id}/part-{int(part_number):06d}",
+                        Body=data,
                     )
                 except Exception:
                     return resp(400, {'error': 'Не удалось загрузить часть файла'}, headers_common)
-                return resp(200, {'etag': part['ETag'], 'partNumber': int(part_number)}, headers_common)
+                return resp(200, {'partNumber': int(part_number)}, headers_common)
 
             if action == 'upload-file-complete':
                 user_row = get_user(cur, token)
                 if not user_row:
                     return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
                 product_id = body.get('productId')
-                key = body.get('key')
                 upload_id = body.get('uploadId')
-                parts = body.get('parts') or []
+                total_parts = body.get('totalParts')
                 file_name = (body.get('fileName') or 'archive.zip').strip()
-                if not product_id or not key or not upload_id or not parts:
+                if not product_id or not upload_id or not total_parts:
                     return resp(400, {'error': 'Не хватает данных для завершения загрузки'}, headers_common)
+                ext = (file_name.rsplit('.', 1)[-1] if '.' in file_name else 'zip').lower()
                 s3 = get_s3()
                 try:
-                    s3.complete_multipart_upload(
-                        Bucket='files', Key=key, UploadId=upload_id,
-                        MultipartUpload={
-                            'Parts': [
-                                {'ETag': p['etag'], 'PartNumber': p['partNumber']} for p in parts
-                            ]
-                        },
+                    chunks = []
+                    for i in range(1, int(total_parts) + 1):
+                        part_key = f"products/files/tmp/{upload_id}/part-{i:06d}"
+                        part_obj = s3.get_object(Bucket='files', Key=part_key)
+                        chunks.append(part_obj['Body'].read())
+                    final_data = b''.join(chunks)
+                    final_key = f"products/files/{uuid.uuid4().hex}-{file_name}"
+                    s3.put_object(
+                        Bucket='files', Key=final_key, Body=final_data,
+                        ContentType=FILE_CONTENT_TYPES.get(ext, 'application/octet-stream'),
                     )
+                    for i in range(1, int(total_parts) + 1):
+                        try:
+                            s3.delete_object(Bucket='files', Key=f"products/files/tmp/{upload_id}/part-{i:06d}")
+                        except Exception:
+                            pass
                 except Exception:
                     return resp(400, {'error': 'Не удалось завершить загрузку файла'}, headers_common)
-                url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+                url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{final_key}"
                 cur.execute(
-                    f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s WHERE id = %s",
+                    f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s, file_source = 'upload' WHERE id = %s",
                     (url, file_name, product_id),
                 )
                 conn.commit()
@@ -410,8 +444,7 @@ def handler(event: dict, context):
             is_admin = bool(user_row and user_row[1])
             seller_id = user_row[0] if user_row else None
 
-            slug_base = body['title'].lower().replace(' ', '-').replace('«', '').replace('»', '')
-            slug = ''.join(c for c in slug_base if c.isalnum() or c == '-') or f"product-{os.urandom(3).hex()}"
+            slug = make_unique_slug(cur, body['title'])
             status = 'approved' if is_admin else 'pending'
             if not is_admin and not seller_id:
                 return resp(401, {'error': 'Войдите в аккаунт, чтобы предложить товар'}, headers_common)
@@ -467,10 +500,29 @@ def handler(event: dict, context):
             if not user_row or not user_row[1]:
                 return resp(403, {'error': 'Доступ только для администратора'}, headers_common)
             pid = params.get('id') or body.get('id')
+            cur.execute(f"SELECT count(*) FROM {SCHEMA}.orders WHERE product_id = %s", (pid,))
+            orders_count = cur.fetchone()[0]
+            if orders_count > 0:
+                cur.execute(
+                    f"UPDATE {SCHEMA}.products SET status = 'archived' WHERE id = %s "
+                    f"RETURNING {PRODUCT_FIELDS}",
+                    (pid,),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                if not row:
+                    return resp(404, {'error': 'Товар не найден'}, headers_common)
+                return resp(200, {
+                    'ok': True,
+                    'archived': True,
+                    'product': product_dict(row),
+                    'message': 'У товара есть оформленные заказы, поэтому он не удалён из базы, а скрыт из каталога (архивирован)',
+                }, headers_common)
+            cur.execute(f"DELETE FROM {SCHEMA}.comments WHERE product_id = %s", (pid,))
             cur.execute(f"DELETE FROM {SCHEMA}.product_images WHERE product_id = %s", (pid,))
             cur.execute(f"DELETE FROM {SCHEMA}.products WHERE id = %s", (pid,))
             conn.commit()
-            return resp(200, {'ok': True}, headers_common)
+            return resp(200, {'ok': True, 'archived': False}, headers_common)
 
         return resp(405, {'error': 'Метод не поддерживается'}, headers_common)
     finally:

@@ -60,6 +60,9 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [fileMode, setFileMode] = useState<'upload' | 'link'>('upload');
+  const [fileLink, setFileLink] = useState('');
+  const [savingLink, setSavingLink] = useState(false);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +70,8 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
   const reset = () => {
     setImages([]);
     setFileName(null);
+    setFileMode('upload');
+    setFileLink('');
   };
 
   useEffect(() => {
@@ -77,6 +82,13 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
         if (d.product) {
           setImages(d.product.imageIds || []);
           setFileName(d.product.fileName || null);
+          if (d.product.fileSource === 'link') {
+            setFileMode('link');
+            setFileLink(d.product.fileUrl || '');
+          } else {
+            setFileMode('upload');
+            setFileLink('');
+          }
         }
       })
       .catch(() => {});
@@ -137,10 +149,9 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       toast.error(initData.error || 'Не удалось начать загрузку файла');
       return;
     }
-    const { uploadId, key } = initData;
+    const { uploadId } = initData;
 
     const totalParts = Math.ceil(file.size / CHUNK_SIZE);
-    const parts: { etag: string; partNumber: number }[] = [];
     try {
       for (let i = 0; i < totalParts; i++) {
         const start = i * CHUNK_SIZE;
@@ -152,7 +163,6 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
           headers: authHeaders(),
           body: JSON.stringify({
             action: 'upload-file-part',
-            key,
             uploadId,
             partNumber: i + 1,
             data: base64,
@@ -162,7 +172,6 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
         if (!partRes.ok) {
           throw new Error(partData.error || 'Не удалось загрузить часть файла');
         }
-        parts.push({ etag: partData.etag, partNumber: partData.partNumber });
         setUploadProgress(Math.round(((i + 1) / totalParts) * 100));
       }
 
@@ -172,9 +181,8 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
         body: JSON.stringify({
           action: 'upload-file-complete',
           productId: product.id,
-          key,
           uploadId,
-          parts,
+          totalParts,
           fileName: file.name,
         }),
       });
@@ -186,11 +194,6 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       toast.success('Файл товара загружен');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось загрузить файл');
-      fetch(API.products, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ action: 'upload-file-abort', key, uploadId }),
-      }).catch(() => {});
     }
   };
 
@@ -238,6 +241,32 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
     }
   };
 
+  const saveLink = async () => {
+    if (!product) return;
+    const link = fileLink.trim();
+    if (!link) {
+      toast.error('Введите ссылку на файл');
+      return;
+    }
+    setSavingLink(true);
+    try {
+      const res = await fetch(API.products, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'set-file-link', productId: product.id, link }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Не удалось сохранить ссылку');
+        return;
+      }
+      setFileName(data.fileName);
+      toast.success('Ссылка на файл сохранена');
+    } finally {
+      setSavingLink(false);
+    }
+  };
+
   const isDraft = !product?.status || product.status === 'draft';
 
   const submit = async () => {
@@ -247,7 +276,7 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       return;
     }
     if (!fileName) {
-      toast.error('Загрузите файл товара (архив)');
+      toast.error(fileMode === 'link' ? 'Укажите и сохраните ссылку на файл' : 'Загрузите файл товара (архив)');
       return;
     }
 
@@ -339,48 +368,106 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
           </div>
 
           <div className="space-y-2">
-            <p className="text-sm font-medium text-foreground">Файл товара (архив)</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip,.rar,.7z"
-              className="hidden"
-              onChange={onFileChange}
-            />
-            {fileName && !uploadingFile ? (
-              <div className="flex items-center justify-between rounded-lg border border-brand-green/40 bg-brand-green/5 px-4 py-3">
-                <span className="flex items-center gap-2 text-sm text-foreground">
-                  <Icon name="FileArchive" size={16} className="text-brand-green" />
-                  {fileName}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-xs font-medium text-brand-cyan transition-colors hover:underline"
-                >
-                  Заменить
-                </button>
-              </div>
-            ) : (
+            <p className="text-sm font-medium text-foreground">Файл товара</p>
+            <div className="flex gap-1.5 rounded-lg border border-border bg-muted/30 p-1">
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingFile}
-                className="flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan disabled:opacity-60"
+                onClick={() => setFileMode('upload')}
+                className={`flex-1 rounded-md py-1.5 text-xs font-medium uppercase tracking-wide transition-colors ${
+                  fileMode === 'upload'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
               >
-                <Icon name={uploadingFile ? 'Loader2' : 'FileUp'} size={20} className={uploadingFile ? 'animate-spin' : ''} />
-                <span className="text-xs">
-                  {uploadingFile ? `Загрузка… ${uploadProgress > 0 ? `${uploadProgress}%` : ''}` : 'Загрузить ZIP / RAR / 7Z, до 200 МБ'}
-                </span>
-                {uploadingFile && uploadProgress > 0 && (
-                  <div className="mt-1 h-1.5 w-2/3 overflow-hidden rounded-full bg-border">
-                    <div
-                      className="h-full rounded-full bg-brand-cyan transition-all"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
+                Архив
+              </button>
+              <button
+                type="button"
+                onClick={() => setFileMode('link')}
+                className={`flex-1 rounded-md py-1.5 text-xs font-medium uppercase tracking-wide transition-colors ${
+                  fileMode === 'link'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Ссылка
+              </button>
+            </div>
+
+            {fileMode === 'upload' ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".zip,.rar,.7z"
+                  className="hidden"
+                  onChange={onFileChange}
+                />
+                {fileName && !uploadingFile ? (
+                  <div className="flex items-center justify-between rounded-lg border border-brand-green/40 bg-brand-green/5 px-4 py-3">
+                    <span className="flex items-center gap-2 text-sm text-foreground">
+                      <Icon name="FileArchive" size={16} className="text-brand-green" />
+                      {fileName}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs font-medium text-brand-cyan transition-colors hover:underline"
+                    >
+                      Заменить
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingFile}
+                    className="flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-5 text-muted-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan disabled:opacity-60"
+                  >
+                    <Icon name={uploadingFile ? 'Loader2' : 'FileUp'} size={20} className={uploadingFile ? 'animate-spin' : ''} />
+                    <span className="text-xs">
+                      {uploadingFile ? `Загрузка… ${uploadProgress > 0 ? `${uploadProgress}%` : ''}` : 'Загрузить ZIP / RAR / 7Z, до 200 МБ'}
+                    </span>
+                    {uploadingFile && uploadProgress > 0 && (
+                      <div className="mt-1 h-1.5 w-2/3 overflow-hidden rounded-full bg-border">
+                        <div
+                          className="h-full rounded-full bg-brand-cyan transition-all"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    )}
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  После оплаты покупатель получит эту ссылку для скачивания файла с внешнего источника.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={fileLink}
+                    onChange={(e) => setFileLink(e.target.value)}
+                    placeholder="https://example.com/file.zip"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveLink}
+                    disabled={savingLink}
+                    className="shrink-0 rounded-md bg-primary px-3.5 text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-60"
+                  >
+                    Сохранить
+                  </button>
+                </div>
+                {fileName && fileMode === 'link' && (
+                  <div className="flex items-center gap-2 rounded-lg border border-brand-green/40 bg-brand-green/5 px-4 py-3">
+                    <Icon name="Link" size={16} className="text-brand-green" />
+                    <span className="truncate text-sm text-foreground">{fileLink}</span>
                   </div>
                 )}
-              </button>
+              </div>
             )}
           </div>
         </div>
