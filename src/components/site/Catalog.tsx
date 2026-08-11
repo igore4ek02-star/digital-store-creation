@@ -73,16 +73,31 @@ const Catalog = () => {
               key={p.id}
               className="group flex animate-fade-in flex-col rounded-2xl border border-border bg-card p-5 transition-colors hover:border-brand-cyan/50"
             >
-              <Link to={`/product/${p.slug}`} className="mb-4 flex items-start justify-between">
-                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-cyan/12 text-brand-cyan transition-colors group-hover:bg-brand-cyan/20">
-                  <Icon name={p.icon} size={24} />
-                </span>
-                {p.tag && (
-                  <span className="rounded-md bg-primary/15 px-2.5 py-1 font-head text-[11px] font-semibold uppercase tracking-wide text-primary">
-                    {p.tag}
+              {p.coverImage ? (
+                <Link to={`/product/${p.slug}`} className="relative mb-4 block overflow-hidden rounded-xl">
+                  <img
+                    src={p.coverImage}
+                    alt={p.title}
+                    className="h-24 w-full object-cover"
+                  />
+                  {p.tag && (
+                    <span className="absolute right-2 top-2 rounded-md bg-primary/90 px-2.5 py-1 font-head text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">
+                      {p.tag}
+                    </span>
+                  )}
+                </Link>
+              ) : (
+                <Link to={`/product/${p.slug}`} className="mb-4 flex items-start justify-between">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-cyan/12 text-brand-cyan transition-colors group-hover:bg-brand-cyan/20">
+                    <Icon name={p.icon} size={24} />
                   </span>
-                )}
-              </Link>
+                  {p.tag && (
+                    <span className="rounded-md bg-primary/15 px-2.5 py-1 font-head text-[11px] font-semibold uppercase tracking-wide text-primary">
+                      {p.tag}
+                    </span>
+                  )}
+                </Link>
+              )}
               <Link to={`/product/${p.slug}`}>
                 <h3 className="font-head text-lg font-semibold uppercase leading-snug tracking-wide text-foreground transition-colors hover:text-brand-cyan">
                   {p.title}
