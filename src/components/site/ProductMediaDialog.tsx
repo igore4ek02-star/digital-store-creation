@@ -44,6 +44,16 @@ const authHeaders = () => ({
 });
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
+const DIRECT_UPLOAD_LIMIT = CHUNK_SIZE;
+
+const parseJsonSafe = async (res: Response) => {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: `Сервер вернул некорректный ответ (код ${res.status})` };
+  }
+};
 
 const readSliceAsBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -144,14 +154,15 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       headers: authHeaders(),
       body: JSON.stringify({ action: 'upload-file-init', productId: product.id, fileName: file.name }),
     });
-    const initData = await initRes.json();
+    const initData = await parseJsonSafe(initRes);
     if (!initRes.ok) {
       toast.error(initData.error || 'Не удалось начать загрузку файла');
       return;
     }
-    const { uploadId } = initData;
+    const { uploadId, key } = initData;
 
     const totalParts = Math.ceil(file.size / CHUNK_SIZE);
+    const parts: { partNumber: number; etag: string }[] = [];
     try {
       for (let i = 0; i < totalParts; i++) {
         const start = i * CHUNK_SIZE;
@@ -164,14 +175,16 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
           body: JSON.stringify({
             action: 'upload-file-part',
             uploadId,
+            key,
             partNumber: i + 1,
             data: base64,
           }),
         });
-        const partData = await partRes.json();
+        const partData = await parseJsonSafe(partRes);
         if (!partRes.ok) {
-          throw new Error(partData.error || 'Не удалось загрузить часть файла');
+          throw new Error(partData.error || `Не удалось загрузить часть файла (${i + 1}/${totalParts})`);
         }
+        parts.push({ partNumber: partData.partNumber, etag: partData.etag });
         setUploadProgress(Math.round(((i + 1) / totalParts) * 100));
       }
 
@@ -182,11 +195,12 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
           action: 'upload-file-complete',
           productId: product.id,
           uploadId,
-          totalParts,
+          key,
+          parts,
           fileName: file.name,
         }),
       });
-      const completeData = await completeRes.json();
+      const completeData = await parseJsonSafe(completeRes);
       if (!completeRes.ok) {
         throw new Error(completeData.error || 'Не удалось завершить загрузку файла');
       }
@@ -194,6 +208,11 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
       toast.success('Файл товара загружен');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось загрузить файл');
+      await fetch(API.products, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'upload-file-abort', uploadId, key }),
+      }).catch(() => {});
     }
   };
 
@@ -212,7 +231,7 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
     setUploadingFile(true);
     setUploadProgress(0);
     try {
-      if (file.size > CHUNK_SIZE) {
+      if (file.size > DIRECT_UPLOAD_LIMIT) {
         await uploadFileChunked(file);
       } else {
         const base64 = await readAsBase64(file);
@@ -226,7 +245,7 @@ const ProductMediaDialog = ({ product, open, onOpenChange, onSubmitted }: Props)
             fileName: file.name,
           }),
         });
-        const data = await res.json();
+        const data = await parseJsonSafe(res);
         if (!res.ok) {
           toast.error(data.error || 'Не удалось загрузить файл');
           return;

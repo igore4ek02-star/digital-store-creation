@@ -322,31 +322,40 @@ def handler(event: dict, context):
                 file_name = (body.get('fileName') or 'archive.zip').strip()
                 if not product_id:
                     return resp(400, {'error': 'Не указан товар'}, headers_common)
-                session_id = uuid.uuid4().hex
-                return resp(200, {'uploadId': session_id, 'key': f"products/files/tmp/{session_id}"}, headers_common)
+                ext = (file_name.rsplit('.', 1)[-1] if '.' in file_name else 'zip').lower()
+                key = f"products/files/{uuid.uuid4().hex}-{file_name}"
+                s3 = get_s3()
+                try:
+                    mp = s3.create_multipart_upload(
+                        Bucket='files', Key=key,
+                        ContentType=FILE_CONTENT_TYPES.get(ext, 'application/octet-stream'),
+                    )
+                except Exception:
+                    return resp(500, {'error': 'Не удалось начать загрузку файла в хранилище'}, headers_common)
+                return resp(200, {'uploadId': mp['UploadId'], 'key': key}, headers_common)
 
             if action == 'upload-file-part':
                 user_row = get_user(cur, token)
                 if not user_row:
                     return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
                 upload_id = body.get('uploadId')
+                key = body.get('key')
                 part_number = body.get('partNumber')
                 part_b64 = body.get('data')
-                if not upload_id or not part_number or not part_b64:
+                if not upload_id or not key or not part_number or not part_b64:
                     return resp(400, {'error': 'Не хватает данных части файла'}, headers_common)
                 if ',' in part_b64:
                     _, part_b64 = part_b64.split(',', 1)
                 data = base64.b64decode(part_b64)
                 s3 = get_s3()
                 try:
-                    s3.put_object(
-                        Bucket='files',
-                        Key=f"products/files/tmp/{upload_id}/part-{int(part_number):06d}",
-                        Body=data,
+                    part = s3.upload_part(
+                        Bucket='files', Key=key, UploadId=upload_id,
+                        PartNumber=int(part_number), Body=data,
                     )
                 except Exception:
-                    return resp(400, {'error': 'Не удалось загрузить часть файла'}, headers_common)
-                return resp(200, {'partNumber': int(part_number)}, headers_common)
+                    return resp(400, {'error': f'Не удалось загрузить часть файла {part_number}'}, headers_common)
+                return resp(200, {'partNumber': int(part_number), 'etag': part['ETag']}, headers_common)
 
             if action == 'upload-file-complete':
                 user_row = get_user(cur, token)
@@ -354,32 +363,24 @@ def handler(event: dict, context):
                     return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
                 product_id = body.get('productId')
                 upload_id = body.get('uploadId')
-                total_parts = body.get('totalParts')
+                key = body.get('key')
+                parts = body.get('parts') or []
                 file_name = (body.get('fileName') or 'archive.zip').strip()
-                if not product_id or not upload_id or not total_parts:
+                if not product_id or not upload_id or not key or not parts:
                     return resp(400, {'error': 'Не хватает данных для завершения загрузки'}, headers_common)
-                ext = (file_name.rsplit('.', 1)[-1] if '.' in file_name else 'zip').lower()
                 s3 = get_s3()
                 try:
-                    chunks = []
-                    for i in range(1, int(total_parts) + 1):
-                        part_key = f"products/files/tmp/{upload_id}/part-{i:06d}"
-                        part_obj = s3.get_object(Bucket='files', Key=part_key)
-                        chunks.append(part_obj['Body'].read())
-                    final_data = b''.join(chunks)
-                    final_key = f"products/files/{uuid.uuid4().hex}-{file_name}"
-                    s3.put_object(
-                        Bucket='files', Key=final_key, Body=final_data,
-                        ContentType=FILE_CONTENT_TYPES.get(ext, 'application/octet-stream'),
+                    s3.complete_multipart_upload(
+                        Bucket='files', Key=key, UploadId=upload_id,
+                        MultipartUpload={'Parts': [{'PartNumber': p['partNumber'], 'ETag': p['etag']} for p in parts]},
                     )
-                    for i in range(1, int(total_parts) + 1):
-                        try:
-                            s3.delete_object(Bucket='files', Key=f"products/files/tmp/{upload_id}/part-{i:06d}")
-                        except Exception:
-                            pass
                 except Exception:
+                    try:
+                        s3.abort_multipart_upload(Bucket='files', Key=key, UploadId=upload_id)
+                    except Exception:
+                        pass
                     return resp(400, {'error': 'Не удалось завершить загрузку файла'}, headers_common)
-                url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{final_key}"
+                url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
                 cur.execute(
                     f"UPDATE {SCHEMA}.products SET file_url = %s, file_name = %s, file_source = 'upload' WHERE id = %s",
                     (url, file_name, product_id),
