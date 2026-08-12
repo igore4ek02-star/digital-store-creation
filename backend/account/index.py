@@ -438,6 +438,44 @@ def handle_payment_create(event, cur, conn, headers_common, token):
     user_row = get_user(cur, token)
     user_id = user_row[0] if user_row else None
 
+    if method == 'FREE':
+        cur.execute(
+            f"SELECT id, title, price, file_url, file_name FROM {SCHEMA}.products "
+            f"WHERE id = %s AND status = 'approved'",
+            (product_id,),
+        )
+        product = cur.fetchone()
+        if not product:
+            return resp(404, {'error': 'Товар не найден'}, headers_common)
+        if float(product[2]) != 0:
+            return resp(400, {'error': 'Этот товар не бесплатный'}, headers_common)
+        if not product[3]:
+            return resp(400, {'error': 'Файл товара ещё не загружен продавцом'}, headers_common)
+
+        user_email = None
+        if user_id:
+            cur.execute(f"SELECT email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            user_email = row[0] if row else None
+        email = user_email or (body.get('email') or '').strip().lower() or 'free-download@guest.local'
+
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.orders (product_id, user_id, email, method, amount, status) "
+            f"VALUES (%s, %s, %s, 'FREE', 0, 'paid') RETURNING id",
+            (product_id, user_id, email),
+        )
+        order_id = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, order_id, method, amount, status) "
+            f"VALUES ('order', %s, %s, 'FREE', 0, 'paid')",
+            (user_id, order_id),
+        )
+        conn.commit()
+        return resp(200, {
+            'orderId': order_id, 'provider': 'FREE', 'paid': True,
+            'fileUrl': product[3], 'fileName': product[4],
+        }, headers_common)
+
     if method == 'BALANCE':
         if not user_id:
             return resp(401, {'error': 'Войдите в аккаунт, чтобы оплатить с баланса'}, headers_common)

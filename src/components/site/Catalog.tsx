@@ -4,6 +4,8 @@ import Icon from '@/components/ui/icon';
 import { CATEGORIES, formatPrice, Product, fetchProducts } from './products';
 import BuyDialog from './BuyDialog';
 
+const TABS = [...CATEGORIES, 'Бесплатные'];
+
 const Catalog = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,10 +19,11 @@ const Catalog = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  const list = useMemo(
-    () => (active === 'Все' ? products : products.filter((p) => p.category === active)),
-    [active, products],
-  );
+  const list = useMemo(() => {
+    if (active === 'Все') return products;
+    if (active === 'Бесплатные') return products.filter((p) => p.price === 0);
+    return products.filter((p) => p.category === active);
+  }, [active, products]);
 
   const buy = (p: Product) => {
     setSelected(p);
@@ -45,7 +48,7 @@ const Catalog = () => {
       </div>
 
       <div className="mb-8 flex flex-wrap gap-2">
-        {CATEGORIES.map((c) => (
+        {TABS.map((c) => (
           <button
             key={c}
             onClick={() => setActive(c)}
@@ -118,14 +121,14 @@ const Catalog = () => {
 
               <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
                 <span className="font-head text-xl font-bold text-foreground">
-                  {formatPrice(p.price)}
+                  {p.price === 0 ? 'Бесплатно' : formatPrice(p.price)}
                 </span>
                 <button
                   onClick={() => buy(p)}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green px-3.5 py-2 font-head text-xs font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
                 >
-                  <Icon name="ShoppingCart" size={15} />
-                  Купить
+                  <Icon name={p.price === 0 ? 'Download' : 'ShoppingCart'} size={15} />
+                  {p.price === 0 ? 'Скачать' : 'Купить'}
                 </button>
               </div>
             </article>

@@ -196,7 +196,7 @@ const ProductPage = () => {
               <div className="mb-5 flex items-baseline justify-between border-t border-border pt-5">
                 <span className="text-sm text-muted-foreground">Цена</span>
                 <span className="font-head text-3xl font-bold text-foreground">
-                  {formatPrice(product.price)}
+                  {product.price === 0 ? 'Бесплатно' : formatPrice(product.price)}
                 </span>
               </div>
 
@@ -204,8 +204,8 @@ const ProductPage = () => {
                 onClick={() => setBuyOpen(true)}
                 className="cta-gradient inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-head text-base font-bold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
               >
-                <Icon name="ShoppingCart" size={18} />
-                Купить и скачать
+                <Icon name={product.price === 0 ? 'Download' : 'ShoppingCart'} size={18} />
+                {product.price === 0 ? 'Скачать бесплатно' : 'Купить и скачать'}
               </button>
             </div>
           </div>

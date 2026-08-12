@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Product, formatPrice } from './products';
 import { API } from '@/lib/api';
 import { getAuthToken, useAuth } from '@/hooks/use-auth';
+import { downloadFile } from '@/lib/download';
 
 interface Props {
   product: Product | null;
@@ -26,19 +27,6 @@ const PAYMENTS = [
   { id: 'ЮMoney', label: 'ЮMoney', icon: 'CreditCard', desc: 'Оплата картой или из кошелька' },
 ];
 
-const downloadFile = async (fileUrl: string, fileName: string) => {
-  const res = await fetch(fileUrl);
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName || 'file';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
-
 const BuyDialog = ({ product, open, onOpenChange }: Props) => {
   const { user, refreshUser } = useAuth();
   const [email, setEmail] = useState('');
@@ -46,9 +34,47 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const isFree = product?.price === 0;
+
   useEffect(() => {
     if (open) setMethod(user ? 'BALANCE' : 'AZVOX');
   }, [open, user]);
+
+  useEffect(() => {
+    if (open && product && isFree) {
+      submitFree();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, product?.id]);
+
+  const submitFree = async () => {
+    if (!product) return;
+    setLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(API.paymentCreate, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ productId: product.id, method: 'FREE' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Не удалось скачать товар');
+        onOpenChange(false);
+        return;
+      }
+      await downloadFile(data.fileUrl, data.fileName || `${product.title}.zip`);
+      toast.success('Товар бесплатный', {
+        description: `Файл «${product.title}» скачивается.`,
+      });
+      onOpenChange(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const submit = async () => {
     if (!product) return;
@@ -112,6 +138,28 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
   };
 
   if (!product) return null;
+
+  if (isFree) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <Icon name={product.icon} size={22} />
+            </div>
+            <DialogTitle className="font-head text-xl uppercase tracking-wide">
+              {product.title}
+            </DialogTitle>
+            <DialogDescription>Бесплатный товар — файл скачивается автоматически</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
+            <Icon name="Loader2" size={20} className="animate-spin" />
+            Готовим файл для скачивания…
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
