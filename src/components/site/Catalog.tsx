@@ -20,9 +20,13 @@ const Catalog = () => {
   }, []);
 
   const list = useMemo(() => {
-    if (active === 'Все') return products;
-    if (active === 'Бесплатные') return products.filter((p) => p.price === 0);
-    return products.filter((p) => p.category === active);
+    const filtered =
+      active === 'Все'
+        ? products
+        : active === 'Бесплатные'
+          ? products.filter((p) => p.price === 0)
+          : products.filter((p) => p.category === active);
+    return [...filtered].sort((a, b) => Number(b.isVip) - Number(a.isVip));
   }, [active, products]);
 
   const buy = (p: Product) => {
@@ -74,8 +78,16 @@ const Catalog = () => {
           {list.map((p) => (
             <article
               key={p.id}
-              className="group flex animate-fade-in flex-col rounded-2xl border border-border bg-card p-5 transition-colors hover:border-brand-cyan/50"
+              className={`group relative flex animate-fade-in flex-col rounded-2xl border bg-card p-5 transition-colors hover:border-brand-cyan/50 ${
+                p.isVip ? 'border-primary/60' : 'border-border'
+              }`}
             >
+              {p.isVip && (
+                <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-md bg-primary px-2 py-0.5 font-head text-[10px] font-bold uppercase tracking-wide text-primary-foreground">
+                  <Icon name="Crown" size={11} />
+                  VIP
+                </span>
+              )}
               {p.coverImage ? (
                 <Link to={`/product/${p.slug}`} className="relative mb-4 block overflow-hidden rounded-xl">
                   <img

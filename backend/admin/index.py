@@ -229,6 +229,35 @@ def handler(event: dict, context):
                     'autoPublish': settings.get('ads_auto_publish') == 'true',
                 }, headers_common)
 
+            if section == 'vip-settings':
+                cur.execute(
+                    f"SELECT key, value FROM {SCHEMA}.site_settings "
+                    f"WHERE key IN ('vip_price_per_day', 'vip_default_days')"
+                )
+                settings = {r[0]: r[1] for r in cur.fetchall()}
+                return resp(200, {
+                    'pricePerDay': float(settings.get('vip_price_per_day', 199)),
+                    'defaultDays': int(float(settings.get('vip_default_days', 7))),
+                }, headers_common)
+
+            if section == 'vip-products':
+                cur.execute(
+                    f"SELECT p.id, p.title, p.price, p.category, p.icon, p.cover_image, p.vip_until, "
+                    f"u.name, u.email "
+                    f"FROM {SCHEMA}.products p LEFT JOIN {SCHEMA}.users u ON u.id = p.seller_id "
+                    f"WHERE p.vip_until IS NOT NULL AND p.vip_until > now() "
+                    f"ORDER BY p.vip_until DESC"
+                )
+                items = [
+                    {
+                        'id': r[0], 'title': r[1], 'price': float(r[2]), 'category': r[3],
+                        'icon': r[4], 'coverImage': r[5], 'vipUntil': r[6].strftime('%d.%m.%Y %H:%M'),
+                        'sellerName': r[7], 'sellerEmail': r[8],
+                    }
+                    for r in cur.fetchall()
+                ]
+                return resp(200, {'products': items}, headers_common)
+
             if section == 'notifications':
                 cur.execute(
                     f"SELECT id, type, title, message, entity_id, is_read, created_at "
@@ -375,6 +404,30 @@ def handler(event: dict, context):
                         f"ON CONFLICT (key) DO UPDATE SET value = %s",
                         (val, val),
                     )
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
+            if action == 'update-vip-settings':
+                price = body.get('pricePerDay')
+                default_days = body.get('defaultDays')
+                if price is not None:
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.site_settings (key, value) VALUES ('vip_price_per_day', %s) "
+                        f"ON CONFLICT (key) DO UPDATE SET value = %s",
+                        (str(price), str(price)),
+                    )
+                if default_days is not None:
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.site_settings (key, value) VALUES ('vip_default_days', %s) "
+                        f"ON CONFLICT (key) DO UPDATE SET value = %s",
+                        (str(default_days), str(default_days)),
+                    )
+                conn.commit()
+                return resp(200, {'ok': True}, headers_common)
+
+            if action == 'revoke-vip':
+                pid = body['id']
+                cur.execute(f"UPDATE {SCHEMA}.products SET vip_until = NULL WHERE id = %s", (pid,))
                 conn.commit()
                 return resp(200, {'ok': True}, headers_common)
 

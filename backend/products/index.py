@@ -2,6 +2,7 @@ import json
 import os
 import base64
 import uuid
+import datetime
 import psycopg2
 import boto3
 
@@ -47,6 +48,7 @@ def make_unique_slug(cur, title: str) -> str:
 
 
 def product_dict(row) -> dict:
+    vip_until = row[16] if len(row) > 16 else None
     return {
         'id': row[0],
         'title': row[1],
@@ -64,12 +66,14 @@ def product_dict(row) -> dict:
         'fileUrl': row[13] if len(row) > 13 else None,
         'fileName': row[14] if len(row) > 14 else None,
         'fileSource': row[15] if len(row) > 15 else 'upload',
+        'isVip': bool(vip_until and vip_until > datetime.datetime.now()),
+        'vipUntil': vip_until.isoformat() if vip_until else None,
     }
 
 
 PRODUCT_FIELDS = (
     "id, title, slug, description, full_description, price, category, "
-    "icon, tag, rating, sales, cover_image, status, file_url, file_name, file_source"
+    "icon, tag, rating, sales, cover_image, status, file_url, file_name, file_source, vip_until"
 )
 
 
@@ -188,6 +192,15 @@ def handler(event: dict, context):
                     return resp(403, {'error': 'Доступ только для администратора'}, headers_common)
                 cur.execute(
                     f"SELECT {PRODUCT_FIELDS} FROM {SCHEMA}.products WHERE status != 'draft' ORDER BY id DESC"
+                )
+                products = [product_dict(r) for r in cur.fetchall()]
+                return resp(200, {'products': products}, headers_common)
+
+            if params.get('vip') == '1':
+                cur.execute(
+                    f"SELECT {PRODUCT_FIELDS} FROM {SCHEMA}.products "
+                    f"WHERE status = 'approved' AND vip_until IS NOT NULL AND vip_until > now() "
+                    f"ORDER BY vip_until DESC LIMIT 4"
                 )
                 products = [product_dict(r) for r in cur.fetchall()]
                 return resp(200, {'products': products}, headers_common)

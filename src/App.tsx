@@ -34,6 +34,7 @@ import AdminUsers from "./pages/admin/Users";
 import AdminModeration from "./pages/admin/Moderation";
 import AdminSupport from "./pages/admin/Support";
 import AdminBanners from "./pages/admin/Banners";
+import AdminVip from "./pages/admin/Vip";
 import AdminNews from "./pages/admin/News";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/moderation" element={<AdminModeration />} />
             <Route path="/admin/banners" element={<AdminBanners />} />
+            <Route path="/admin/vip" element={<AdminVip />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/activity" element={<AdminActivity />} />
             <Route path="/admin/finance" element={<AdminFinance />} />

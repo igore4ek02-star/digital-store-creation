@@ -7,6 +7,8 @@ export const API = {
   admin: funcUrls.admin,
   presence: `${funcUrls.account}?resource=presence`,
   ads: `${funcUrls.account}?resource=ads`,
+  vip: `${funcUrls.account}?resource=vip`,
+  vipProducts: `${funcUrls.products}?vip=1`,
   support: `${funcUrls.account}?resource=support`,
   wallet: `${funcUrls.account}?resource=wallet`,
   myOrders: `${funcUrls.account}?resource=orders`,

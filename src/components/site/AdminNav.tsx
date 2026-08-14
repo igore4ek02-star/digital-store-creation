@@ -5,6 +5,7 @@ const ITEMS = [
   { to: '/admin', label: 'Товары', icon: 'Package' },
   { to: '/admin/moderation', label: 'Модерация', icon: 'ShieldCheck' },
   { to: '/admin/banners', label: 'Баннеры', icon: 'Image' },
+  { to: '/admin/vip', label: 'VIP-продвижение', icon: 'Crown' },
   { to: '/admin/news', label: 'Новости', icon: 'Newspaper' },
   { to: '/admin/users', label: 'Пользователи', icon: 'Users' },
   { to: '/admin/activity', label: 'Активность', icon: 'Activity' },

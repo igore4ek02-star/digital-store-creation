@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { API } from '@/lib/api';
+import { Product, formatPrice } from './products';
 import AdOrderDialog from './AdOrderDialog';
 
 const PILLS = [
@@ -20,11 +22,16 @@ const Hero = () => {
   const [query, setQuery] = useState('');
   const [ads, setAds] = useState<AdItem[]>([]);
   const [adDialogOpen, setAdDialogOpen] = useState(false);
+  const [vipProducts, setVipProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     fetch(`${API.ads}&active=1`)
       .then((r) => r.json())
       .then((d) => setAds(d.ads || []))
+      .catch(() => {});
+    fetch(API.vipProducts)
+      .then((r) => r.json())
+      .then((d) => setVipProducts(d.products || []))
       .catch(() => {});
   }, []);
 
@@ -37,29 +44,59 @@ const Hero = () => {
       <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 pb-14 pt-6 md:px-8 md:pb-20 md:pt-8">
         {/* signature: fresh-products pill row */}
         <div className="animate-rise flex flex-col gap-3 md:flex-row md:items-stretch md:gap-3.5">
-          {PILLS.map((p) => (
-            <div
-              key={p.title}
-              className="flex flex-1 items-center gap-3 rounded-2xl bg-brand-surface px-3.5 py-3 shadow-[0_10px_26px_-14px_rgba(0,0,0,0.55)]"
-            >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-cyan/15 text-brand-cyan">
-                <Icon name={p.icon} size={19} />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-head text-sm font-semibold text-brand-surface-foreground">
-                  {p.title}
-                </span>
-                <span className="truncate text-xs text-slate-500">{p.sub}</span>
-              </span>
-              <button
-                onClick={goCatalog}
-                aria-label="Открыть"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-green text-primary-foreground transition-transform hover:-translate-y-0.5"
-              >
-                <Icon name="ArrowUpRight" size={16} />
-              </button>
-            </div>
-          ))}
+          {vipProducts.length > 0
+            ? vipProducts.map((p) => (
+                <Link
+                  key={p.id}
+                  to={`/product/${p.slug}`}
+                  className="flex flex-1 items-center gap-3 rounded-2xl bg-brand-surface px-3.5 py-3 shadow-[0_10px_26px_-14px_rgba(0,0,0,0.55)] ring-1 ring-primary/40 transition-transform hover:-translate-y-0.5"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    <Icon name={p.icon} size={19} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center gap-1.5 truncate font-head text-sm font-semibold text-brand-surface-foreground">
+                      {p.title}
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-primary px-1.5 py-0.5 font-head text-[9px] font-bold uppercase tracking-wide text-primary-foreground">
+                        <Icon name="Crown" size={9} />
+                        VIP
+                      </span>
+                    </span>
+                    <span className="truncate text-xs text-slate-500">
+                      {p.category} · {p.price === 0 ? 'Бесплатно' : formatPrice(p.price)}
+                    </span>
+                  </span>
+                  <span
+                    aria-label="Открыть"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-green text-primary-foreground"
+                  >
+                    <Icon name="ArrowUpRight" size={16} />
+                  </span>
+                </Link>
+              ))
+            : PILLS.map((p) => (
+                <div
+                  key={p.title}
+                  className="flex flex-1 items-center gap-3 rounded-2xl bg-brand-surface px-3.5 py-3 shadow-[0_10px_26px_-14px_rgba(0,0,0,0.55)]"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-cyan/15 text-brand-cyan">
+                    <Icon name={p.icon} size={19} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-head text-sm font-semibold text-brand-surface-foreground">
+                      {p.title}
+                    </span>
+                    <span className="truncate text-xs text-slate-500">{p.sub}</span>
+                  </span>
+                  <button
+                    onClick={goCatalog}
+                    aria-label="Открыть"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-green text-primary-foreground transition-transform hover:-translate-y-0.5"
+                  >
+                    <Icon name="ArrowUpRight" size={16} />
+                  </button>
+                </div>
+              ))}
         </div>
 
         <div className="animate-rise flex flex-wrap items-center gap-2.5">

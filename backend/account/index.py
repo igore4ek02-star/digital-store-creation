@@ -5,6 +5,7 @@ import hashlib
 import urllib.request
 import urllib.parse
 import uuid
+import datetime
 import psycopg2
 import boto3
 
@@ -260,6 +261,78 @@ def handle_ad_track(event, cur, conn, headers_common):
     cur.execute(f"UPDATE {SCHEMA}.ads SET {column} = {column} + 1 WHERE id = %s", (ad_id,))
     conn.commit()
     return resp(200, {'ok': True}, headers_common)
+
+
+def handle_vip(event, cur, conn, method, headers_common, token, params):
+    if method == 'GET':
+        cur.execute(
+            f"SELECT value FROM {SCHEMA}.site_settings WHERE key IN ('vip_price_per_day', 'vip_default_days')"
+        )
+        settings = {r[0]: r[1] for r in cur.fetchall()}
+        return resp(200, {
+            'pricePerDay': float(settings.get('vip_price_per_day', 199)),
+            'defaultDays': int(float(settings.get('vip_default_days', 7))),
+        }, headers_common)
+
+    user_row = get_user(cur, token)
+    if not user_row:
+        return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+    user_id = user_row[0]
+
+    body = json.loads(event.get('body') or '{}')
+    if method == 'POST':
+        product_id = body.get('productId')
+        days = int(body.get('days') or 0)
+        if not product_id:
+            return resp(400, {'error': 'Не указан товар'}, headers_common)
+
+        cur.execute(
+            f"SELECT id, title, seller_id, vip_until FROM {SCHEMA}.products WHERE id = %s",
+            (product_id,),
+        )
+        product = cur.fetchone()
+        if not product:
+            return resp(404, {'error': 'Товар не найден'}, headers_common)
+        if product[2] != user_id:
+            return resp(403, {'error': 'Это не ваш товар'}, headers_common)
+
+        cur.execute(
+            f"SELECT value FROM {SCHEMA}.site_settings WHERE key IN ('vip_price_per_day', 'vip_default_days')"
+        )
+        settings = {r[0]: r[1] for r in cur.fetchall()}
+        price_per_day = float(settings.get('vip_price_per_day', 199))
+        default_days = int(float(settings.get('vip_default_days', 7)))
+        if days < 1:
+            days = default_days
+        total = price_per_day * days
+
+        cur.execute(f"SELECT balance FROM {SCHEMA}.users WHERE id = %s FOR UPDATE", (user_id,))
+        balance = float(cur.fetchone()[0])
+        if balance < total:
+            return resp(400, {'error': f'Недостаточно средств на балансе. Нужно {total:.0f} ₽'}, headers_common)
+
+        cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance - %s WHERE id = %s", (total, user_id))
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'vip_purchase', %s, %s)",
+            (user_id, -total, f"VIP-продвижение «{product[1]}» на {days} дн."),
+        )
+
+        base = product[3] if product[3] and product[3] > datetime.datetime.now() else None
+        cur.execute(
+            f"UPDATE {SCHEMA}.products SET vip_until = COALESCE(%s, now()) + (%s || ' days')::interval "
+            f"WHERE id = %s RETURNING vip_until",
+            (base, days, product_id),
+        )
+        vip_until = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+            f"VALUES ('vip_purchase', 'VIP-продвижение оформлено', %s, %s)",
+            (f"«{product[1]}» — VIP до {vip_until.strftime('%d.%m.%Y')}", product_id),
+        )
+        conn.commit()
+        return resp(200, {'ok': True, 'vipUntil': vip_until.isoformat()}, headers_common)
+
+    return resp(405, {'error': 'Метод не поддерживается'}, headers_common)
 
 
 def handle_support(event, cur, conn, method, headers_common, token, params):
@@ -803,7 +876,7 @@ def handle_news_comments(event, cur, conn, method, headers_common, token, params
 
 
 def handler(event: dict, context):
-    """Личный кабинет пользователя: онлайн-присутствие, заказ рекламы, обращения в поддержку, баланс (пополнение/вывод). Раздел выбирается параметром resource"""
+    """Личный кабинет пользователя: онлайн-присутствие, заказ рекламы, VIP-продвижение товара, обращения в поддержку, баланс (пополнение/вывод). Раздел выбирается параметром resource"""
     method = event.get('httpMethod', 'GET')
     headers_common = {
         'Access-Control-Allow-Origin': '*',
@@ -827,6 +900,8 @@ def handler(event: dict, context):
             return handle_ads(event, cur, conn, method, headers_common, token, params)
         if resource == 'ad-track' and method == 'POST':
             return handle_ad_track(event, cur, conn, headers_common)
+        if resource == 'vip':
+            return handle_vip(event, cur, conn, method, headers_common, token, params)
         if resource == 'support':
             return handle_support(event, cur, conn, method, headers_common, token, params)
         if resource == 'wallet':

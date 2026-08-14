@@ -6,9 +6,10 @@ interface Props {
   myProducts: Product[];
   myProductsLoading: boolean;
   onPropose: () => void;
+  onPromoteVip: (p: Product) => void;
 }
 
-const CabinetProductsTab = ({ myProducts, myProductsLoading, onPropose }: Props) => {
+const CabinetProductsTab = ({ myProducts, myProductsLoading, onPropose, onPromoteVip }: Props) => {
   return (
     <TabsContent value="my-products">
       <div className="mb-4 flex items-center justify-between">
@@ -51,15 +52,32 @@ const CabinetProductsTab = ({ myProducts, myProductsLoading, onPropose }: Props)
                     <Icon name={p.icon} size={22} />
                   </span>
                   <div>
-                    <p className="font-head font-semibold uppercase tracking-wide text-foreground">
+                    <p className="flex items-center gap-1.5 font-head font-semibold uppercase tracking-wide text-foreground">
                       {p.title}
+                      {p.isVip && (
+                        <span className="inline-flex items-center gap-0.5 rounded-md bg-primary px-1.5 py-0.5 font-head text-[9px] font-bold uppercase tracking-wide text-primary-foreground">
+                          <Icon name="Crown" size={9} />
+                          VIP
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {p.category} · {formatPrice(p.price)}
                     </p>
                   </div>
                 </div>
-                <span className={`text-sm font-medium ${statusColor}`}>{statusLabel}</span>
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm font-medium ${statusColor}`}>{statusLabel}</span>
+                  {p.status === 'approved' && (
+                    <button
+                      onClick={() => onPromoteVip(p)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 px-3 py-1.5 font-head text-xs font-semibold uppercase tracking-wide text-primary transition-colors hover:bg-primary/10"
+                    >
+                      <Icon name="Crown" size={13} />
+                      {p.isVip ? 'Продлить VIP' : 'Активировать VIP'}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

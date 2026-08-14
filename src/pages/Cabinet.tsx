@@ -8,6 +8,7 @@ import { formatPrice, Product } from '@/components/site/products';
 import { API } from '@/lib/api';
 import ProposeProductDialog from '@/components/site/ProposeProductDialog';
 import ProductMediaDialog from '@/components/site/ProductMediaDialog';
+import VipPromoteDialog from '@/components/site/VipPromoteDialog';
 import CabinetPurchasesTab, { Purchase } from '@/components/cabinet/CabinetPurchasesTab';
 import CabinetProductsTab from '@/components/cabinet/CabinetProductsTab';
 import CabinetWalletTab, { Transaction, Payout } from '@/components/cabinet/CabinetWalletTab';
@@ -45,6 +46,8 @@ const Cabinet = () => {
   const [proposeOpen, setProposeOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [draftProduct, setDraftProduct] = useState<{ id: number; title: string } | null>(null);
+  const [vipOpen, setVipOpen] = useState(false);
+  const [vipProduct, setVipProduct] = useState<Product | null>(null);
 
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [purchasesLoading, setPurchasesLoading] = useState(true);
@@ -287,6 +290,10 @@ const Cabinet = () => {
             myProducts={myProducts}
             myProductsLoading={myProductsLoading}
             onPropose={() => setProposeOpen(true)}
+            onPromoteVip={(p) => {
+              setVipProduct(p);
+              setVipOpen(true);
+            }}
           />
 
           <CabinetWalletTab
@@ -338,6 +345,12 @@ const Cabinet = () => {
         open={mediaOpen}
         onOpenChange={setMediaOpen}
         onSubmitted={loadMyProducts}
+      />
+      <VipPromoteDialog
+        product={vipProduct}
+        open={vipOpen}
+        onOpenChange={setVipOpen}
+        onSuccess={loadMyProducts}
       />
     </div>
   );

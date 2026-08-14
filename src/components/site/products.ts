@@ -19,6 +19,8 @@ export interface Product {
   status?: string;
   fileUrl?: string;
   fileName?: string;
+  isVip?: boolean;
+  vipUntil?: string | null;
 }
 
 export const CATEGORIES: (Category | 'Все')[] = ['Все', 'Скрипты', 'Шаблоны', 'Плагины', 'Проекты'];
