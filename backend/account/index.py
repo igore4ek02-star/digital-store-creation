@@ -266,7 +266,7 @@ def handle_ad_track(event, cur, conn, headers_common):
 def handle_vip(event, cur, conn, method, headers_common, token, params):
     if method == 'GET':
         cur.execute(
-            f"SELECT value FROM {SCHEMA}.site_settings WHERE key IN ('vip_price_per_day', 'vip_default_days')"
+            f"SELECT key, value FROM {SCHEMA}.site_settings WHERE key IN ('vip_price_per_day', 'vip_default_days')"
         )
         settings = {r[0]: r[1] for r in cur.fetchall()}
         return resp(200, {
@@ -297,7 +297,7 @@ def handle_vip(event, cur, conn, method, headers_common, token, params):
             return resp(403, {'error': 'Это не ваш товар'}, headers_common)
 
         cur.execute(
-            f"SELECT value FROM {SCHEMA}.site_settings WHERE key IN ('vip_price_per_day', 'vip_default_days')"
+            f"SELECT key, value FROM {SCHEMA}.site_settings WHERE key IN ('vip_price_per_day', 'vip_default_days')"
         )
         settings = {r[0]: r[1] for r in cur.fetchall()}
         price_per_day = float(settings.get('vip_price_per_day', 199))
