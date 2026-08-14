@@ -23,6 +23,7 @@ interface Props {
 
 const PAYMENTS = [
   { id: 'BALANCE', label: 'С баланса', icon: 'Wallet', desc: 'Списание с баланса аккаунта, мгновенно' },
+  { id: 'SBP', label: 'СБП', icon: 'QrCode', desc: 'Быстрый перевод по QR или из банка' },
   { id: 'AZVOX', label: 'AZVOX', icon: 'Wallet', desc: 'Карты и электронные кошельки' },
   { id: 'ЮMoney', label: 'ЮMoney', icon: 'CreditCard', desc: 'Оплата картой или из кошелька' },
 ];
@@ -30,14 +31,14 @@ const PAYMENTS = [
 const BuyDialog = ({ product, open, onOpenChange }: Props) => {
   const { user, refreshUser } = useAuth();
   const [email, setEmail] = useState('');
-  const [method, setMethod] = useState(user ? 'BALANCE' : 'AZVOX');
+  const [method, setMethod] = useState(user ? 'BALANCE' : 'SBP');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const isFree = product?.price === 0;
 
   useEffect(() => {
-    if (open) setMethod(user ? 'BALANCE' : 'AZVOX');
+    if (open) setMethod(user ? 'BALANCE' : 'SBP');
   }, [open, user]);
 
   useEffect(() => {
@@ -92,7 +93,7 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
           'Content-Type': 'application/json',
           ...(token ? { 'X-Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ productId: product.id, email, method }),
+        body: JSON.stringify({ productId: product.id, email, method, returnUrl: window.location.href }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -107,6 +108,15 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         });
         await refreshUser();
         onOpenChange(false);
+        return;
+      }
+
+      if (data.provider === 'SBP' && data.paymentUrl) {
+        localStorage.setItem(
+          'pending-order',
+          JSON.stringify({ orderId: data.orderId, token: data.accessToken, title: product.title }),
+        );
+        window.location.href = data.paymentUrl;
         return;
       }
 

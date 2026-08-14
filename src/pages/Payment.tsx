@@ -4,12 +4,22 @@ import Footer from '@/components/site/Footer';
 
 const METHODS = [
   {
+    icon: 'QrCode',
+    name: 'СБП',
+    desc: 'Система быстрых платежей — переводите напрямую из приложения своего банка по QR-коду или ссылке, без ввода данных карты.',
+    points: [
+      'Оплата через приложение любого банка',
+      'Без комиссии для покупателя',
+      'Мгновенное зачисление после подтверждения',
+    ],
+  },
+  {
     icon: 'Wallet',
     name: 'AZVOX',
     desc: 'Быстрая платёжная система для приёма оплаты банковскими картами и электронными кошельками. Поддерживает все основные карты российских банков.',
     points: [
       'Оплата картой Visa, MasterCard, МИР',
-      'Электронные кошельки и SBP-переводы',
+      'Электронные кошельки',
       'Комиссия за перевод не взимается с покупателя',
     ],
   },
@@ -31,14 +41,14 @@ const Payment = () => {
       <Header />
       <main className="mx-auto max-w-7xl px-5 py-10 md:px-8">
         <h1 className="font-head text-3xl font-bold uppercase leading-tight tracking-tight text-foreground md:text-5xl">
-          Оплата AZVOX и ЮMoney
+          Оплата через СБП, AZVOX и ЮMoney
         </h1>
         <p className="mt-3 max-w-2xl text-muted-foreground">
-          Оплачивайте покупки удобным способом — картой или из электронного кошелька.
-          Ссылка на скачивание товара приходит на e-mail сразу после подтверждения платежа.
+          Оплачивайте покупки удобным способом — по СБП, картой или из электронного кошелька.
+          Файл открывается сразу после подтверждения платежа.
         </p>
 
-        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3">
           {METHODS.map((m) => (
             <div
               key={m.name}

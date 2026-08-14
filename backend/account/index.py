@@ -17,6 +17,10 @@ AZVOX_PAYOUT_ACCOUNT = os.environ.get('AZVOX_PAYOUT_ACCOUNT', '')
 AZVOX_PAYOUT_API_ID = os.environ.get('AZVOX_PAYOUT_API_ID', '')
 AZVOX_PAYOUT_API_PASS = os.environ.get('AZVOX_PAYOUT_API_PASS', '')
 
+TBANK_TERMINAL_KEY = os.environ.get('TBANK_TERMINAL_KEY', '')
+TBANK_PASSWORD = os.environ.get('TBANK_PASSWORD', '')
+TBANK_FUNCTION_URL = 'https://functions.poehali.dev/20c1b1ea-4023-4f55-809c-ab97bb099da0'
+
 
 def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -431,6 +435,36 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
         method_name = body.get('method', 'AZVOX')
         if amount < 1:
             return resp(400, {'error': 'Укажите сумму пополнения'}, headers_common)
+
+        if method_name == 'SBP':
+            if not TBANK_TERMINAL_KEY or not TBANK_PASSWORD:
+                return resp(500, {'error': 'Оплата через СБП не настроена. Обратитесь к администратору'}, headers_common)
+            cur.execute(f"SELECT email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
+            user_email = cur.fetchone()[0]
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, method, amount, status) "
+                f"VALUES ('topup', %s, 'SBP', %s, 'pending') RETURNING id",
+                (user_id, amount),
+            )
+            tx_id = cur.fetchone()[0]
+            order_id_str = f'topup-{tx_id}'
+            cur.execute(
+                f"UPDATE {SCHEMA}.payment_transactions SET external_id = %s WHERE id = %s",
+                (order_id_str, tx_id),
+            )
+            conn.commit()
+            try:
+                result = tbank_init_payment(
+                    order_id_str, amount, 'Пополнение баланса', user_email,
+                    notify_action='tbank-topup-notify',
+                    return_url=(body.get('returnUrl') or ''),
+                )
+            except Exception:
+                return resp(502, {'error': 'Не удалось связаться с банком. Попробуйте ещё раз'}, headers_common)
+            if not result.get('Success'):
+                return resp(400, {'error': result.get('Message', 'Банк отклонил создание платежа')}, headers_common)
+            return resp(200, {'ok': True, 'paymentUrl': result.get('PaymentURL')}, headers_common)
+
         cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance + %s WHERE id = %s", (amount, user_id))
         cur.execute(
             f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'topup', %s, %s)",
@@ -501,6 +535,56 @@ def build_azvox_form(order_id: int, amount: float, description: str) -> dict:
         'm_sign': sign,
         'payUrl': 'https://azvox.cash/pay/',
     }
+
+
+def tbank_token(payload: dict) -> str:
+    parts = {**payload, 'Password': TBANK_PASSWORD}
+    parts.pop('Receipt', None)
+    parts.pop('DATA', None)
+    values = [str(parts[k]) for k in sorted(parts.keys())]
+    return hashlib.sha256(''.join(values).encode('utf-8')).hexdigest()
+
+
+def tbank_request(path: str, payload: dict) -> dict:
+    payload = {**payload, 'TerminalKey': TBANK_TERMINAL_KEY}
+    payload['Token'] = tbank_token(payload)
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(
+        f'https://securepay.tinkoff.ru/v2/{path}',
+        data=data,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=20) as f:
+        return json.loads(f.read().decode('utf-8'))
+
+
+def tbank_init_payment(
+    order_id, amount: float, description: str, email: str,
+    notify_action: str = 'tbank-notify', return_url: str = '',
+) -> dict:
+    payload = {
+        'Amount': int(round(amount * 100)),
+        'OrderId': str(order_id),
+        'Description': description[:250],
+        'NotificationURL': f'{TBANK_FUNCTION_URL}?resource=payment&action={notify_action}',
+        'DATA': {'Email': email} if email else {},
+        'Receipt': {
+            'Email': email,
+            'Taxation': 'usn_income',
+            'Items': [{
+                'Name': description[:100],
+                'Price': int(round(amount * 100)),
+                'Quantity': 1,
+                'Amount': int(round(amount * 100)),
+                'Tax': 'none',
+            }],
+        },
+    }
+    if return_url:
+        payload['SuccessURL'] = return_url
+        payload['FailURL'] = return_url
+    return tbank_request('Init', payload)
 
 
 def handle_payment_create(event, cur, conn, headers_common, token):
@@ -626,6 +710,28 @@ def handle_payment_create(event, cur, conn, headers_common, token):
             'orderId': order_id, 'provider': 'AZVOX', 'form': form, 'accessToken': access_token,
         }, headers_common)
 
+    if method == 'SBP':
+        if not TBANK_TERMINAL_KEY or not TBANK_PASSWORD:
+            return resp(500, {'error': 'Оплата через СБП не настроена. Обратитесь к администратору'}, headers_common)
+        try:
+            result = tbank_init_payment(
+                order_id, float(product[2]), product[1], email,
+                return_url=(body.get('returnUrl') or ''),
+            )
+        except Exception:
+            return resp(502, {'error': 'Не удалось связаться с банком. Попробуйте ещё раз'}, headers_common)
+        if not result.get('Success'):
+            return resp(400, {'error': result.get('Message', 'Банк отклонил создание платежа')}, headers_common)
+        cur.execute(
+            f"UPDATE {SCHEMA}.orders SET external_id = %s WHERE id = %s",
+            (result.get('PaymentId'), order_id),
+        )
+        conn.commit()
+        return resp(200, {
+            'orderId': order_id, 'provider': 'SBP', 'paymentUrl': result.get('PaymentURL'),
+            'accessToken': access_token,
+        }, headers_common)
+
     return resp(400, {'error': 'Этот способ оплаты скоро будет доступен'}, headers_common)
 
 
@@ -739,6 +845,118 @@ def handle_azvox_status(event, cur, conn):
         conn.commit()
 
     return {'statusCode': 200, 'headers': text_headers, 'body': f'{order_id}|success'}
+
+
+def handle_tbank_notify(event, cur, conn):
+    text_headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/plain'}
+    body = event.get('body') or ''
+    if event.get('isBase64Encoded'):
+        body = base64.b64decode(body).decode('utf-8')
+    try:
+        params = json.loads(body)
+        if not isinstance(params, dict):
+            raise ValueError('not a dict')
+    except Exception:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    received_token = params.pop('Token', None)
+    if tbank_token(params) != received_token:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+    if str(params.get('TerminalKey')) != str(TBANK_TERMINAL_KEY):
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    status = params.get('Status')
+    order_id_raw = params.get('OrderId')
+    if not order_id_raw or not str(order_id_raw).isdigit():
+        return {'statusCode': 200, 'headers': text_headers, 'body': 'OK'}
+    order_id = int(order_id_raw)
+    payment_id = str(params.get('PaymentId', ''))
+
+    cur.execute(f"SELECT id, status, amount, user_id, method FROM {SCHEMA}.orders WHERE id = %s", (order_id,))
+    order = cur.fetchone()
+    if not order:
+        return {'statusCode': 200, 'headers': text_headers, 'body': 'OK'}
+
+    if order[1] == 'pending' and status in ('CONFIRMED', 'REJECTED'):
+        new_status = 'paid' if status == 'CONFIRMED' else 'failed'
+        cur.execute(
+            f"UPDATE {SCHEMA}.orders SET status = %s, external_id = %s WHERE id = %s",
+            (new_status, payment_id, order_id),
+        )
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, order_id, method, amount, status, external_id) "
+            f"VALUES ('order', %s, %s, 'SBP', %s, %s, %s)",
+            (order[3], order_id, order[2], new_status, payment_id),
+        )
+        if new_status == 'paid':
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+                f"VALUES ('purchase', 'Новая покупка', %s, %s)",
+                (f"Заказ #{order_id} на {float(order[2]):.0f} ₽ оплачен через СБП", order_id),
+            )
+        conn.commit()
+
+    return {'statusCode': 200, 'headers': text_headers, 'body': 'OK'}
+
+
+def handle_tbank_topup_notify(event, cur, conn):
+    text_headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/plain'}
+    body = event.get('body') or ''
+    if event.get('isBase64Encoded'):
+        body = base64.b64decode(body).decode('utf-8')
+    try:
+        params = json.loads(body)
+        if not isinstance(params, dict):
+            raise ValueError('not a dict')
+    except Exception:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    received_token = params.pop('Token', None)
+    if tbank_token(params) != received_token:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+    if str(params.get('TerminalKey')) != str(TBANK_TERMINAL_KEY):
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    status = params.get('Status')
+    order_id_raw = params.get('OrderId')
+    payment_id = str(params.get('PaymentId', ''))
+    if not order_id_raw or not str(order_id_raw).startswith('topup-'):
+        return {'statusCode': 200, 'headers': text_headers, 'body': 'OK'}
+
+    cur.execute(
+        f"SELECT id, status, amount, user_id FROM {SCHEMA}.payment_transactions "
+        f"WHERE kind = 'topup' AND external_id = %s",
+        (order_id_raw,),
+    )
+    tx = cur.fetchone()
+    if not tx:
+        return {'statusCode': 200, 'headers': text_headers, 'body': 'OK'}
+
+    if tx[1] == 'pending' and status in ('CONFIRMED', 'REJECTED'):
+        new_status = 'paid' if status == 'CONFIRMED' else 'failed'
+        cur.execute(
+            f"UPDATE {SCHEMA}.payment_transactions SET status = %s WHERE id = %s",
+            (new_status, tx[0]),
+        )
+        if new_status == 'paid':
+            amount = float(tx[2])
+            user_id = tx[3]
+            cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance + %s WHERE id = %s", (amount, user_id))
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'topup', %s, %s)",
+                (user_id, amount, 'Пополнение через СБП'),
+            )
+            cur.execute(f"SELECT name, email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
+            uname_row = cur.fetchone()
+            if uname_row:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
+                    f"VALUES ('topup', 'Пополнение баланса', %s, %s, TRUE)",
+                    (f"{uname_row[0]} ({uname_row[1]}) пополнил баланс на {amount:.0f} ₽ через СБП", user_id),
+                )
+        conn.commit()
+
+    return {'statusCode': 200, 'headers': text_headers, 'body': 'OK'}
 
 
 def news_dict(row) -> dict:
@@ -916,6 +1134,10 @@ def handler(event: dict, context):
                 return handle_payment_create(event, cur, conn, headers_common, token)
             if payment_action == 'azvox-status':
                 return handle_azvox_status(event, cur, conn)
+            if payment_action == 'tbank-notify':
+                return handle_tbank_notify(event, cur, conn)
+            if payment_action == 'tbank-topup-notify':
+                return handle_tbank_topup_notify(event, cur, conn)
             return resp(400, {'error': 'Неизвестное действие оплаты'}, headers_common)
         if resource == 'orders' and method == 'GET':
             return handle_my_orders(cur, headers_common, token)

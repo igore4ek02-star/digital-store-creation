@@ -26,7 +26,7 @@ const Cabinet = () => {
   const [topupOpen, setTopupOpen] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<string>('AZVOX');
+  const [method, setMethod] = useState<string>('SBP');
   const [wallet, setWallet] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -113,11 +113,15 @@ const Cabinet = () => {
       const res = await fetch(API.wallet, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'topup', amount: n, method }),
+        body: JSON.stringify({ action: 'topup', amount: n, method, returnUrl: window.location.href }),
       });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || 'Не удалось пополнить баланс');
+        return;
+      }
+      if (data.paymentUrl) {
+        window.location.href = data.paymentUrl;
         return;
       }
       toast.success('Баланс пополнен', {
@@ -242,7 +246,7 @@ const Cabinet = () => {
           <div className="flex gap-3">
             <button
               onClick={() => {
-                setMethod('AZVOX');
+                setMethod('SBP');
                 setTopupOpen(true);
               }}
               className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
@@ -252,7 +256,7 @@ const Cabinet = () => {
             </button>
             <button
               onClick={() => {
-                setMethod('AZVOX');
+                setMethod('SBP');
                 setPayoutOpen(true);
               }}
               className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"

@@ -35,6 +35,13 @@
       "method": "GET",
       "path": "/?resource=order-status&orderId=999999&token=abc",
       "expectedStatus": 404
+    },
+    {
+      "name": "POST tbank-notify без подписи",
+      "method": "POST",
+      "path": "/?resource=payment&action=tbank-notify",
+      "body": "{}",
+      "expectedStatus": 400
     }
   ]
 }

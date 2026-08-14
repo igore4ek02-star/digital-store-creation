@@ -29,8 +29,15 @@ export interface Payout {
 }
 
 export const PAYMENTS = [
+  { id: 'SBP', label: 'СБП', desc: 'Быстрый перевод по QR или из банка' },
   { id: 'AZVOX', label: 'AZVOX', desc: 'Карты и электронные кошельки' },
   { id: 'ЮMoney', label: 'ЮMoney', desc: 'Оплата картой или из кошелька' },
+] as const;
+
+export const PAYOUT_METHODS = [
+  { id: 'SBP', label: 'СБП', desc: 'Перевод на телефон, до 24 часов', placeholder: '+7 900 123-45-67' },
+  { id: 'AZVOX', label: 'AZVOX', desc: 'Кошелёк AZVOX', placeholder: 'Номер кошелька' },
+  { id: 'ЮMoney', label: 'ЮMoney', desc: 'Кошелёк ЮMoney', placeholder: 'Номер кошелька' },
 ] as const;
 
 const payoutStatusLabel = (s: string) =>
@@ -202,13 +209,13 @@ const CabinetWalletTab = ({
               Вывод средств
             </DialogTitle>
             <DialogDescription>
-              Заявка на выплату на кошелёк AZVOX или ЮMoney.
+              Заявка на выплату по СБП на телефон или на кошелёк AZVOX / ЮMoney.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label>Куда вывести</Label>
             <div className="grid grid-cols-2 gap-2">
-              {PAYMENTS.map((p) => (
+              {PAYOUT_METHODS.map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -226,12 +233,14 @@ const CabinetWalletTab = ({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="payout-wallet">Номер кошелька / карты</Label>
+            <Label htmlFor="payout-wallet">
+              {method === 'SBP' ? 'Номер телефона' : 'Номер кошелька / карты'}
+            </Label>
             <Input
               id="payout-wallet"
               value={wallet}
               onChange={(e) => setWallet(e.target.value)}
-              placeholder="Например: 4100 1234 5678"
+              placeholder={PAYOUT_METHODS.find((p) => p.id === method)?.placeholder}
             />
           </div>
           <div className="space-y-2">
