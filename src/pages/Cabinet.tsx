@@ -21,7 +21,7 @@ const authHeaders = () => ({
 
 const Cabinet = () => {
   const navigate = useNavigate();
-  const { user, logout, refreshUser } = useAuth();
+  const { user, loading: authLoading, logout, refreshUser } = useAuth();
 
   const [topupOpen, setTopupOpen] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -53,8 +53,8 @@ const Cabinet = () => {
   const [purchasesLoading, setPurchasesLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) navigate('/auth');
-  }, [user, navigate]);
+    if (!authLoading && !user) navigate('/auth');
+  }, [user, authLoading, navigate]);
 
   const loadPurchases = () => {
     setPurchasesLoading(true);

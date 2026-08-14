@@ -25,7 +25,7 @@ interface OtherUser {
 const MessageThread = () => {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [otherUser, setOtherUser] = useState<OtherUser | null>(null);
@@ -53,13 +53,14 @@ const MessageThread = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) {
       navigate('/auth');
       return;
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, userId]);
+  }, [user, authLoading, userId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

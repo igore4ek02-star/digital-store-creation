@@ -15,12 +15,13 @@ interface Conversation {
 }
 
 const Messages = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) {
       navigate('/auth');
       return;
@@ -30,7 +31,7 @@ const Messages = () => {
       .then((r) => r.json())
       .then((d) => setConversations(d.conversations || []))
       .finally(() => setLoading(false));
-  }, [user, navigate]);
+  }, [user, authLoading, navigate]);
 
   if (!user) return null;
 
