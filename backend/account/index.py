@@ -21,6 +21,10 @@ TBANK_TERMINAL_KEY = os.environ.get('TBANK_TERMINAL_KEY', '')
 TBANK_PASSWORD = os.environ.get('TBANK_PASSWORD', '')
 TBANK_FUNCTION_URL = 'https://functions.poehali.dev/20c1b1ea-4023-4f55-809c-ab97bb099da0'
 
+# Смещение для m_orderid AZVOX-платежей пополнения баланса, чтобы не путать
+# с id обычных заказов (orders.id) в общем webhook handle_azvox_status
+AZVOX_TOPUP_OFFSET = 1_000_000_000
+
 
 def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
@@ -436,11 +440,12 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
         if amount < 1:
             return resp(400, {'error': 'Укажите сумму пополнения'}, headers_common)
 
+        cur.execute(f"SELECT email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
+        user_email = cur.fetchone()[0]
+
         if method_name == 'SBP':
             if not TBANK_TERMINAL_KEY or not TBANK_PASSWORD:
                 return resp(500, {'error': 'Оплата через СБП не настроена. Обратитесь к администратору'}, headers_common)
-            cur.execute(f"SELECT email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
-            user_email = cur.fetchone()[0]
             cur.execute(
                 f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, method, amount, status) "
                 f"VALUES ('topup', %s, 'SBP', %s, 'pending') RETURNING id",
@@ -465,20 +470,21 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
                 return resp(400, {'error': result.get('Message', 'Банк отклонил создание платежа')}, headers_common)
             return resp(200, {'ok': True, 'paymentUrl': result.get('PaymentURL')}, headers_common)
 
-        cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance + %s WHERE id = %s", (amount, user_id))
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'topup', %s, %s)",
-            (user_id, amount, f'Пополнение через {method_name}'),
-        )
-        cur.execute(f"SELECT name, email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
-        uname, uemail = cur.fetchone()
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
-            f"VALUES ('topup', 'Пополнение баланса', %s, %s, TRUE)",
-            (f"{uname} ({uemail}) пополнил баланс на {amount:.0f} ₽ через {method_name}", user_id),
-        )
-        conn.commit()
-        return resp(200, {'ok': True}, headers_common)
+        if method_name == 'AZVOX':
+            if not AZVOX_SHOP_ID or not AZVOX_SECRET_KEY:
+                return resp(500, {'error': 'AZVOX не настроен. Обратитесь к администратору'}, headers_common)
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, method, amount, status) "
+                f"VALUES ('topup', %s, 'AZVOX', %s, 'pending') RETURNING id",
+                (user_id, amount),
+            )
+            tx_id = cur.fetchone()[0]
+            azvox_order_id = AZVOX_TOPUP_OFFSET + tx_id
+            conn.commit()
+            form = build_azvox_form(azvox_order_id, amount, 'Пополнение баланса')
+            return resp(200, {'ok': True, 'provider': 'AZVOX', 'form': form, 'txId': tx_id}, headers_common)
+
+        return resp(400, {'error': 'Этот способ пополнения пока недоступен'}, headers_common)
 
     if action == 'payout':
         amount = float(body.get('amount') or 0)
@@ -759,6 +765,24 @@ def handle_order_status(params, cur, headers_common):
     }, headers_common)
 
 
+def handle_topup_status(params, cur, headers_common, token):
+    user_row = get_user(cur, token)
+    if not user_row:
+        return resp(401, {'error': 'Войдите в аккаунт'}, headers_common)
+    tx_id = params.get('txId')
+    if not tx_id:
+        return resp(400, {'error': 'Не указан платёж'}, headers_common)
+    cur.execute(
+        f"SELECT status, amount FROM {SCHEMA}.payment_transactions "
+        f"WHERE id = %s AND kind = 'topup' AND user_id = %s",
+        (tx_id, user_row[0]),
+    )
+    row = cur.fetchone()
+    if not row:
+        return resp(404, {'error': 'Платёж не найден'}, headers_common)
+    return resp(200, {'status': row[0], 'paid': row[0] == 'paid', 'amount': float(row[1])}, headers_common)
+
+
 def handle_my_orders(cur, headers_common, token):
     user_row = get_user(cur, token)
     if not user_row:
@@ -819,6 +843,45 @@ def handle_azvox_status(event, cur, conn):
 
     order_id = int(params.get('m_orderid'))
     operation_id = params.get('m_operation_id')
+
+    if order_id >= AZVOX_TOPUP_OFFSET:
+        tx_id = order_id - AZVOX_TOPUP_OFFSET
+        cur.execute(
+            f"SELECT id, status, amount, user_id FROM {SCHEMA}.payment_transactions "
+            f"WHERE id = %s AND kind = 'topup' AND method = 'AZVOX'",
+            (tx_id,),
+        )
+        tx = cur.fetchone()
+        if not tx:
+            return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+        if tx[1] == 'pending':
+            new_status = 'paid' if m_status == 'success' else 'failed'
+            cur.execute(
+                f"UPDATE {SCHEMA}.payment_transactions SET status = %s, external_id = %s WHERE id = %s",
+                (new_status, operation_id, tx_id),
+            )
+            if new_status == 'paid':
+                amount = float(tx[2])
+                topup_user_id = tx[3]
+                cur.execute(
+                    f"UPDATE {SCHEMA}.users SET balance = balance + %s WHERE id = %s",
+                    (amount, topup_user_id),
+                )
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) "
+                    f"VALUES (%s, 'topup', %s, 'Пополнение через AZVOX')",
+                    (topup_user_id, amount),
+                )
+                cur.execute(f"SELECT name, email FROM {SCHEMA}.users WHERE id = %s", (topup_user_id,))
+                uname_row = cur.fetchone()
+                if uname_row:
+                    cur.execute(
+                        f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
+                        f"VALUES ('topup', 'Пополнение баланса', %s, %s, TRUE)",
+                        (f"{uname_row[0]} ({uname_row[1]}) пополнил баланс на {amount:.0f} ₽ через AZVOX", topup_user_id),
+                    )
+            conn.commit()
+        return {'statusCode': 200, 'headers': text_headers, 'body': f'{order_id}|success'}
 
     cur.execute(f"SELECT id, status, amount, user_id FROM {SCHEMA}.orders WHERE id = %s", (order_id,))
     order = cur.fetchone()
@@ -1143,6 +1206,8 @@ def handler(event: dict, context):
             return handle_my_orders(cur, headers_common, token)
         if resource == 'order-status' and method == 'GET':
             return handle_order_status(params, cur, headers_common)
+        if resource == 'topup-status' and method == 'GET':
+            return handle_topup_status(params, cur, headers_common, token)
         return resp(400, {'error': 'Не указан или неизвестен resource'}, headers_common)
     finally:
         cur.close()

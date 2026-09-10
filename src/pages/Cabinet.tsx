@@ -124,6 +124,22 @@ const Cabinet = () => {
         window.location.href = data.paymentUrl;
         return;
       }
+      if (data.provider === 'AZVOX' && data.form && data.txId) {
+        localStorage.setItem('pending-topup', JSON.stringify({ txId: data.txId, amount: n }));
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = data.form.payUrl;
+        ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'].forEach((key) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = String(data.form[key]);
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        return;
+      }
       toast.success('Баланс пополнен', {
         description: `+${formatPrice(n)} через ${method}.`,
       });

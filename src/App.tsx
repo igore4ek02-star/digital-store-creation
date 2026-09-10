@@ -26,6 +26,7 @@ import MessageThread from "./pages/MessageThread";
 import NotFound from "./pages/NotFound";
 import OnlineWidget from "@/components/site/OnlineWidget";
 import PendingOrderWatcher from "@/components/site/PendingOrderWatcher";
+import PendingTopupWatcher from "@/components/site/PendingTopupWatcher";
 import AdminActivity from "./pages/admin/Activity";
 import AdminFinance from "./pages/admin/Finance";
 import AdminAuthHistory from "./pages/admin/AuthHistory";
@@ -48,6 +49,7 @@ const App = () => (
         <BrowserRouter>
           <OnlineWidget />
           <PendingOrderWatcher />
+          <PendingTopupWatcher />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/admin" element={<Admin />} />

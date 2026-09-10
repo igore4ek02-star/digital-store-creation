@@ -42,6 +42,12 @@
       "path": "/?resource=payment&action=tbank-notify",
       "body": "{}",
       "expectedStatus": 400
+    },
+    {
+      "name": "GET topup-status без токена",
+      "method": "GET",
+      "path": "/?resource=topup-status&txId=1",
+      "expectedStatus": 401
     }
   ]
 }

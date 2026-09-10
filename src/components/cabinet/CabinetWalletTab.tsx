@@ -31,13 +31,11 @@ export interface Payout {
 export const PAYMENTS = [
   { id: 'SBP', label: 'СБП', desc: 'Быстрый перевод по QR или из банка' },
   { id: 'AZVOX', label: 'AZVOX', desc: 'Карты и электронные кошельки' },
-  { id: 'ЮMoney', label: 'ЮMoney', desc: 'Оплата картой или из кошелька' },
 ] as const;
 
 export const PAYOUT_METHODS = [
   { id: 'SBP', label: 'СБП', desc: 'Перевод на телефон, до 24 часов', placeholder: '+7 900 123-45-67' },
   { id: 'AZVOX', label: 'AZVOX', desc: 'Кошелёк AZVOX', placeholder: 'Номер кошелька' },
-  { id: 'ЮMoney', label: 'ЮMoney', desc: 'Кошелёк ЮMoney', placeholder: 'Номер кошелька' },
 ] as const;
 
 const payoutStatusLabel = (s: string) =>

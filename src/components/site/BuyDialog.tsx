@@ -25,7 +25,6 @@ const PAYMENTS = [
   { id: 'BALANCE', label: 'С баланса', icon: 'Wallet', desc: 'Списание с баланса аккаунта, мгновенно' },
   { id: 'SBP', label: 'СБП', icon: 'QrCode', desc: 'Быстрый перевод по QR или из банка' },
   { id: 'AZVOX', label: 'AZVOX', icon: 'Wallet', desc: 'Карты и электронные кошельки' },
-  { id: 'ЮMoney', label: 'ЮMoney', icon: 'CreditCard', desc: 'Оплата картой или из кошелька' },
 ];
 
 const BuyDialog = ({ product, open, onOpenChange }: Props) => {
