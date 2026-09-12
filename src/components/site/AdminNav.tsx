@@ -11,7 +11,6 @@ const ITEMS = [
   { to: '/admin/activity', label: 'Активность', icon: 'Activity' },
   { to: '/admin/finance', label: 'Финансы', icon: 'Wallet' },
   { to: '/admin/auth-history', label: 'История входов', icon: 'History' },
-  { to: '/admin/payouts', label: 'Выплаты', icon: 'Banknote' },
   { to: '/admin/support', label: 'Поддержка', icon: 'Headphones' },
 ];
 

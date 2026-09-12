@@ -23,22 +23,20 @@ interface Props {
 
 const PAYMENTS = [
   { id: 'BALANCE', label: 'С баланса', icon: 'Wallet', desc: 'Списание с баланса аккаунта, мгновенно' },
-  { id: 'SBP', label: 'СБП', icon: 'QrCode', desc: 'Быстрый перевод по QR или из банка' },
   { id: 'ROBOKASSA', label: 'Робокасса', icon: 'CreditCard', desc: 'Карты, SberPay и другие способы' },
-  { id: 'AZVOX', label: 'AZVOX', icon: 'Wallet', desc: 'Карты и электронные кошельки' },
 ];
 
 const BuyDialog = ({ product, open, onOpenChange }: Props) => {
   const { user, refreshUser } = useAuth();
   const [email, setEmail] = useState('');
-  const [method, setMethod] = useState(user ? 'BALANCE' : 'SBP');
+  const [method, setMethod] = useState(user ? 'BALANCE' : 'ROBOKASSA');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const isFree = product?.price === 0;
 
   useEffect(() => {
-    if (open) setMethod(user ? 'BALANCE' : 'SBP');
+    if (open) setMethod(user ? 'BALANCE' : 'ROBOKASSA');
   }, [open, user]);
 
   useEffect(() => {
@@ -111,15 +109,6 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         return;
       }
 
-      if (data.provider === 'SBP' && data.paymentUrl) {
-        localStorage.setItem(
-          'pending-order',
-          JSON.stringify({ orderId: data.orderId, token: data.accessToken, title: product.title }),
-        );
-        window.location.href = data.paymentUrl;
-        return;
-      }
-
       if (data.form && data.accessToken) {
         localStorage.setItem(
           'pending-order',
@@ -128,10 +117,7 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = data.form.payUrl;
-        const fields =
-          data.provider === 'ROBOKASSA'
-            ? ['MerchantLogin', 'OutSum', 'InvId', 'Description', 'SignatureValue', 'Email']
-            : ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'];
+        const fields = ['MerchantLogin', 'OutSum', 'InvId', 'Description', 'SignatureValue', 'Email'];
         fields.forEach((key) => {
           if (data.form[key] === undefined || data.form[key] === '') return;
           const input = document.createElement('input');

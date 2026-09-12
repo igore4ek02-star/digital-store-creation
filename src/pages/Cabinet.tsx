@@ -11,7 +11,7 @@ import ProductMediaDialog from '@/components/site/ProductMediaDialog';
 import VipPromoteDialog from '@/components/site/VipPromoteDialog';
 import CabinetPurchasesTab, { Purchase } from '@/components/cabinet/CabinetPurchasesTab';
 import CabinetProductsTab from '@/components/cabinet/CabinetProductsTab';
-import CabinetWalletTab, { Transaction, Payout } from '@/components/cabinet/CabinetWalletTab';
+import CabinetWalletTab, { Transaction } from '@/components/cabinet/CabinetWalletTab';
 import CabinetSupportTab, { Ticket } from '@/components/cabinet/CabinetSupportTab';
 
 const authHeaders = () => ({
@@ -24,14 +24,11 @@ const Cabinet = () => {
   const { user, loading: authLoading, logout, refreshUser } = useAuth();
 
   const [topupOpen, setTopupOpen] = useState(false);
-  const [payoutOpen, setPayoutOpen] = useState(false);
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState<string>('SBP');
-  const [wallet, setWallet] = useState('');
+  const [method, setMethod] = useState<string>('ROBOKASSA');
   const [submitting, setSubmitting] = useState(false);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [payouts, setPayouts] = useState<Payout[]>([]);
   const [walletLoading, setWalletLoading] = useState(true);
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -70,7 +67,6 @@ const Cabinet = () => {
       .then((r) => r.json())
       .then((d) => {
         setTransactions(d.transactions || []);
-        setPayouts(d.payouts || []);
       })
       .finally(() => setWalletLoading(false));
   };
@@ -124,15 +120,12 @@ const Cabinet = () => {
         window.location.href = data.paymentUrl;
         return;
       }
-      if ((data.provider === 'AZVOX' || data.provider === 'ROBOKASSA') && data.form && data.txId) {
+      if (data.provider === 'ROBOKASSA' && data.form && data.txId) {
         localStorage.setItem('pending-topup', JSON.stringify({ txId: data.txId, amount: n }));
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = data.form.payUrl;
-        const fields =
-          data.provider === 'ROBOKASSA'
-            ? ['MerchantLogin', 'OutSum', 'InvId', 'Description', 'SignatureValue', 'Email']
-            : ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'];
+        const fields = ['MerchantLogin', 'OutSum', 'InvId', 'Description', 'SignatureValue', 'Email'];
         fields.forEach((key) => {
           if (data.form[key] === undefined || data.form[key] === '') return;
           const input = document.createElement('input');
@@ -150,41 +143,6 @@ const Cabinet = () => {
       });
       setTopupOpen(false);
       setAmount('');
-      await refreshUser();
-      loadWallet();
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const doPayout = async () => {
-    const n = Number(amount);
-    if (!n || n < 1) {
-      toast.error('Введите сумму выплаты');
-      return;
-    }
-    if (wallet.trim().length < 4) {
-      toast.error('Укажите кошелёк или карту для выплаты');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch(API.wallet, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ action: 'payout', amount: n, method, wallet: wallet.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || 'Не удалось создать заявку');
-        return;
-      }
-      toast.success('Заявка на выплату создана', {
-        description: `Выплата ${formatPrice(n)} на ${method} · ${wallet}. Обработаем в течение суток.`,
-      });
-      setPayoutOpen(false);
-      setAmount('');
-      setWallet('');
       await refreshUser();
       loadWallet();
     } finally {
@@ -267,23 +225,13 @@ const Cabinet = () => {
           <div className="flex gap-3">
             <button
               onClick={() => {
-                setMethod('SBP');
+                setMethod('ROBOKASSA');
                 setTopupOpen(true);
               }}
               className="inline-flex items-center gap-2 rounded-lg bg-brand-green px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-primary-foreground transition-transform hover:-translate-y-0.5"
             >
               <Icon name="Plus" size={16} />
               Пополнить
-            </button>
-            <button
-              onClick={() => {
-                setMethod('SBP');
-                setPayoutOpen(true);
-              }}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 font-head text-sm font-semibold uppercase tracking-wide text-foreground transition-colors hover:border-brand-cyan/50 hover:text-brand-cyan"
-            >
-              <Icon name="Banknote" size={16} />
-              Выплата
             </button>
           </div>
         </div>
@@ -323,21 +271,15 @@ const Cabinet = () => {
 
           <CabinetWalletTab
             transactions={transactions}
-            payouts={payouts}
             walletLoading={walletLoading}
             topupOpen={topupOpen}
             setTopupOpen={setTopupOpen}
-            payoutOpen={payoutOpen}
-            setPayoutOpen={setPayoutOpen}
             amount={amount}
             setAmount={setAmount}
             method={method}
             setMethod={setMethod}
-            wallet={wallet}
-            setWallet={setWallet}
             submitting={submitting}
             doTopup={doTopup}
-            doPayout={doPayout}
           />
 
           <CabinetSupportTab

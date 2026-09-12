@@ -451,46 +451,8 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
         cur.execute(f"SELECT email FROM {SCHEMA}.users WHERE id = %s", (user_id,))
         user_email = cur.fetchone()[0]
 
-        if method_name == 'SBP':
-            if not TBANK_TERMINAL_KEY or not TBANK_PASSWORD:
-                return resp(500, {'error': 'Оплата через СБП не настроена. Обратитесь к администратору'}, headers_common)
-            cur.execute(
-                f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, method, amount, status) "
-                f"VALUES ('topup', %s, 'SBP', %s, 'pending') RETURNING id",
-                (user_id, amount),
-            )
-            tx_id = cur.fetchone()[0]
-            order_id_str = f'topup-{tx_id}'
-            cur.execute(
-                f"UPDATE {SCHEMA}.payment_transactions SET external_id = %s WHERE id = %s",
-                (order_id_str, tx_id),
-            )
-            conn.commit()
-            try:
-                result = tbank_init_payment(
-                    order_id_str, amount, 'Пополнение баланса', user_email,
-                    notify_action='tbank-topup-notify',
-                    return_url=(body.get('returnUrl') or ''),
-                )
-            except Exception:
-                return resp(502, {'error': 'Не удалось связаться с банком. Попробуйте ещё раз'}, headers_common)
-            if not result.get('Success'):
-                return resp(400, {'error': result.get('Message', 'Банк отклонил создание платежа')}, headers_common)
-            return resp(200, {'ok': True, 'paymentUrl': result.get('PaymentURL')}, headers_common)
-
-        if method_name == 'AZVOX':
-            if not AZVOX_SHOP_ID or not AZVOX_SECRET_KEY:
-                return resp(500, {'error': 'AZVOX не настроен. Обратитесь к администратору'}, headers_common)
-            cur.execute(
-                f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, method, amount, status) "
-                f"VALUES ('topup', %s, 'AZVOX', %s, 'pending') RETURNING id",
-                (user_id, amount),
-            )
-            tx_id = cur.fetchone()[0]
-            azvox_order_id = AZVOX_TOPUP_OFFSET + tx_id
-            conn.commit()
-            form = build_azvox_form(azvox_order_id, amount, 'Пополнение баланса')
-            return resp(200, {'ok': True, 'provider': 'AZVOX', 'form': form, 'txId': tx_id}, headers_common)
+        if method_name in ('SBP', 'AZVOX'):
+            return resp(400, {'error': 'Этот способ пополнения временно отключён. Используйте Робокассу'}, headers_common)
 
         if method_name == 'ROBOKASSA':
             if not ROBOKASSA_MERCHANT_LOGIN or not ROBOKASSA_PASSWORD1:
@@ -509,33 +471,7 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
         return resp(400, {'error': 'Этот способ пополнения пока недоступен'}, headers_common)
 
     if action == 'payout':
-        amount = float(body.get('amount') or 0)
-        method_name = body.get('method', 'AZVOX')
-        wallet = (body.get('wallet') or '').strip()
-        if amount < 1 or len(wallet) < 4:
-            return resp(400, {'error': 'Укажите сумму и реквизиты для выплаты'}, headers_common)
-        cur.execute(f"SELECT balance FROM {SCHEMA}.users WHERE id = %s FOR UPDATE", (user_id,))
-        balance = float(cur.fetchone()[0])
-        if balance < amount:
-            return resp(400, {'error': 'Недостаточно средств на балансе'}, headers_common)
-        cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance - %s WHERE id = %s", (amount, user_id))
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) VALUES (%s, 'payout', %s, %s)",
-            (user_id, -amount, f'Заявка на выплату через {method_name}'),
-        )
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.payouts (user_id, amount, method, wallet, status) VALUES (%s, %s, %s, %s, 'pending') "
-            f"RETURNING id",
-            (user_id, amount, method_name, wallet),
-        )
-        payout_id = cur.fetchone()[0]
-        cur.execute(
-            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
-            f"VALUES ('payout_request', 'Заявка на вывод средств', %s, %s)",
-            (f'{amount:.0f} ₽ через {method_name}', payout_id),
-        )
-        conn.commit()
-        return resp(200, {'ok': True}, headers_common)
+        return resp(400, {'error': 'Вывод средств временно недоступен'}, headers_common)
 
     return resp(400, {'error': 'Неизвестное действие'}, headers_common)
 
@@ -750,13 +686,8 @@ def handle_payment_create(event, cur, conn, headers_common, token):
     order_id = cur.fetchone()[0]
     conn.commit()
 
-    if method == 'AZVOX':
-        if not AZVOX_SHOP_ID or not AZVOX_SECRET_KEY:
-            return resp(500, {'error': 'AZVOX не настроен. Обратитесь к администратору'}, headers_common)
-        form = build_azvox_form(order_id, float(product[2]), product[1])
-        return resp(200, {
-            'orderId': order_id, 'provider': 'AZVOX', 'form': form, 'accessToken': access_token,
-        }, headers_common)
+    if method in ('AZVOX', 'SBP'):
+        return resp(400, {'error': 'Этот способ оплаты временно отключён. Используйте Робокассу'}, headers_common)
 
     if method == 'ROBOKASSA':
         if not ROBOKASSA_MERCHANT_LOGIN or not ROBOKASSA_PASSWORD1:
@@ -764,28 +695,6 @@ def handle_payment_create(event, cur, conn, headers_common, token):
         form = build_robokassa_form(order_id, float(product[2]), product[1], email)
         return resp(200, {
             'orderId': order_id, 'provider': 'ROBOKASSA', 'form': form, 'accessToken': access_token,
-        }, headers_common)
-
-    if method == 'SBP':
-        if not TBANK_TERMINAL_KEY or not TBANK_PASSWORD:
-            return resp(500, {'error': 'Оплата через СБП не настроена. Обратитесь к администратору'}, headers_common)
-        try:
-            result = tbank_init_payment(
-                order_id, float(product[2]), product[1], email,
-                return_url=(body.get('returnUrl') or ''),
-            )
-        except Exception:
-            return resp(502, {'error': 'Не удалось связаться с банком. Попробуйте ещё раз'}, headers_common)
-        if not result.get('Success'):
-            return resp(400, {'error': result.get('Message', 'Банк отклонил создание платежа')}, headers_common)
-        cur.execute(
-            f"UPDATE {SCHEMA}.orders SET external_id = %s WHERE id = %s",
-            (result.get('PaymentId'), order_id),
-        )
-        conn.commit()
-        return resp(200, {
-            'orderId': order_id, 'provider': 'SBP', 'paymentUrl': result.get('PaymentURL'),
-            'accessToken': access_token,
         }, headers_common)
 
     return resp(400, {'error': 'Этот способ оплаты скоро будет доступен'}, headers_common)
