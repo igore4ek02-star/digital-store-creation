@@ -16,7 +16,7 @@ const Footer = () => {
       title: 'Клиентам',
       links: [
         { label: 'Как это работает', to: '/how-it-works' },
-        { label: 'Оплата AZVOX и ЮMoney', to: '/payment' },
+        { label: 'Оплата AZVOX и Робокасса', to: '/payment' },
         { label: 'Установка под ключ', to: '/installation' },
         { label: 'Поддержка', to: '/support' },
       ],
@@ -46,8 +46,21 @@ const Footer = () => {
                 AZVOX
               </span>
               <span className="rounded-md border border-brand-cyan/35 px-2.5 py-1 font-head text-xs font-semibold tracking-wide text-brand-cyan">
-                ЮMoney
+                Робокасса
               </span>
+            </div>
+            <div className="mt-5 space-y-2">
+              <a
+                href="tel:+79785951426"
+                className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-brand-cyan"
+              >
+                <Icon name="Phone" size={15} />
+                +7 978 595-14-26
+              </a>
+              <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Icon name="MapPin" size={15} className="mt-0.5 shrink-0" />
+                298303, Республика Крым, г. Керчь, ул. Шоссе Вокзальное, д. 82, кв. 8
+              </p>
             </div>
           </div>
 
