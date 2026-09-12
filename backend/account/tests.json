@@ -48,6 +48,12 @@
       "method": "GET",
       "path": "/?resource=topup-status&txId=1",
       "expectedStatus": 401
+    },
+    {
+      "name": "GET robokassa-result без подписи",
+      "method": "GET",
+      "path": "/?resource=payment&action=robokassa-result",
+      "expectedStatus": 400
     }
   ]
 }

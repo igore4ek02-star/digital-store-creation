@@ -25,11 +25,11 @@ const METHODS = [
   },
   {
     icon: 'CreditCard',
-    name: 'ЮMoney',
-    desc: 'Проверенный сервис для онлайн-платежей. Оплатить можно как картой, так и напрямую с баланса кошелька ЮMoney. Подключение в процессе.',
+    name: 'Робокасса',
+    desc: 'Один из крупнейших платёжных агрегаторов в России. Принимает банковские карты, SberPay и другие популярные способы оплаты.',
     points: [
-      'Оплата с баланса кошелька ЮMoney',
-      'Привязанные банковские карты',
+      'Оплата картой Visa, MasterCard, МИР',
+      'SberPay и другие электронные способы',
       'Мгновенное подтверждение платежа',
     ],
   },
@@ -41,7 +41,7 @@ const Payment = () => {
       <Header />
       <main className="mx-auto max-w-7xl px-5 py-10 md:px-8">
         <h1 className="font-head text-3xl font-bold uppercase leading-tight tracking-tight text-foreground md:text-5xl">
-          Оплата через СБП, AZVOX и ЮMoney
+          Оплата через СБП, Робокассу и AZVOX
         </h1>
         <p className="mt-3 max-w-2xl text-muted-foreground">
           Оплачивайте покупки удобным способом — по СБП, картой или из электронного кошелька.
@@ -82,7 +82,7 @@ const Payment = () => {
               Безопасная оплата
             </h3>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              Все платежи обрабатываются через защищённые каналы AZVOX и ЮMoney. Мы не храним
+              Все платежи обрабатываются через защищённые каналы СБП, Робокассы и AZVOX. Мы не храним
               данные ваших карт — оплата происходит напрямую на стороне платёжной системы.
             </p>
           </div>

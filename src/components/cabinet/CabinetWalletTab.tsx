@@ -30,6 +30,7 @@ export interface Payout {
 
 export const PAYMENTS = [
   { id: 'SBP', label: 'СБП', desc: 'Быстрый перевод по QR или из банка' },
+  { id: 'ROBOKASSA', label: 'Робокасса', desc: 'Карты, SberPay и другие способы' },
   { id: 'AZVOX', label: 'AZVOX', desc: 'Карты и электронные кошельки' },
 ] as const;
 

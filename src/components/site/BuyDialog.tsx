@@ -24,6 +24,7 @@ interface Props {
 const PAYMENTS = [
   { id: 'BALANCE', label: 'С баланса', icon: 'Wallet', desc: 'Списание с баланса аккаунта, мгновенно' },
   { id: 'SBP', label: 'СБП', icon: 'QrCode', desc: 'Быстрый перевод по QR или из банка' },
+  { id: 'ROBOKASSA', label: 'Робокасса', icon: 'CreditCard', desc: 'Карты, SberPay и другие способы' },
   { id: 'AZVOX', label: 'AZVOX', icon: 'Wallet', desc: 'Карты и электронные кошельки' },
 ];
 
@@ -127,8 +128,12 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = data.form.payUrl;
-        const fields = ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'];
+        const fields =
+          data.provider === 'ROBOKASSA'
+            ? ['MerchantLogin', 'OutSum', 'InvId', 'Description', 'SignatureValue', 'Email']
+            : ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'];
         fields.forEach((key) => {
+          if (data.form[key] === undefined || data.form[key] === '') return;
           const input = document.createElement('input');
           input.type = 'hidden';
           input.name = key;

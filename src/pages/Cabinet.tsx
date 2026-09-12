@@ -124,12 +124,17 @@ const Cabinet = () => {
         window.location.href = data.paymentUrl;
         return;
       }
-      if (data.provider === 'AZVOX' && data.form && data.txId) {
+      if ((data.provider === 'AZVOX' || data.provider === 'ROBOKASSA') && data.form && data.txId) {
         localStorage.setItem('pending-topup', JSON.stringify({ txId: data.txId, amount: n }));
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = data.form.payUrl;
-        ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'].forEach((key) => {
+        const fields =
+          data.provider === 'ROBOKASSA'
+            ? ['MerchantLogin', 'OutSum', 'InvId', 'Description', 'SignatureValue', 'Email']
+            : ['m_shop', 'm_orderid', 'm_amount', 'm_curr', 'm_desc', 'm_params', 'm_sign'];
+        fields.forEach((key) => {
+          if (data.form[key] === undefined || data.form[key] === '') return;
           const input = document.createElement('input');
           input.type = 'hidden';
           input.name = key;
