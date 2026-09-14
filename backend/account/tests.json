@@ -54,6 +54,12 @@
       "method": "GET",
       "path": "/?resource=payment&action=robokassa-result",
       "expectedStatus": 400
+    },
+    {
+      "name": "GET freekassa-result без подписи",
+      "method": "GET",
+      "path": "/?resource=payment&action=freekassa-result",
+      "expectedStatus": 400
     }
   ]
 }

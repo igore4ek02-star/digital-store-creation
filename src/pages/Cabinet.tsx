@@ -138,6 +138,25 @@ const Cabinet = () => {
         form.submit();
         return;
       }
+
+      if (data.provider === 'FREEKASSA' && data.form && data.txId) {
+        localStorage.setItem('pending-topup', JSON.stringify({ txId: data.txId, amount: n }));
+        const form = document.createElement('form');
+        form.method = 'GET';
+        form.action = data.form.payUrl;
+        const fields = ['m', 'oa', 'o', 'currency', 's', 'em'];
+        fields.forEach((key) => {
+          if (data.form[key] === undefined || data.form[key] === '') return;
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = String(data.form[key]);
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        return;
+      }
       toast.success('Баланс пополнен', {
         description: `+${formatPrice(n)} через ${method}.`,
       });

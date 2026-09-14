@@ -24,6 +24,7 @@ interface Props {
 const PAYMENTS = [
   { id: 'BALANCE', label: 'С баланса', icon: 'Wallet', desc: 'Списание с баланса аккаунта, мгновенно' },
   { id: 'ROBOKASSA', label: 'Робокасса', icon: 'CreditCard', desc: 'Карты, SberPay и другие способы' },
+  { id: 'FREEKASSA', label: 'FreeKassa', icon: 'Wallet2', desc: 'Карты, электронные кошельки, крипта' },
 ];
 
 const BuyDialog = ({ product, open, onOpenChange }: Props) => {
@@ -106,6 +107,28 @@ const BuyDialog = ({ product, open, onOpenChange }: Props) => {
         });
         await refreshUser();
         onOpenChange(false);
+        return;
+      }
+
+      if (data.provider === 'FREEKASSA' && data.form && data.accessToken) {
+        localStorage.setItem(
+          'pending-order',
+          JSON.stringify({ orderId: data.orderId, token: data.accessToken, title: product.title }),
+        );
+        const form = document.createElement('form');
+        form.method = 'GET';
+        form.action = data.form.payUrl;
+        const fields = ['m', 'oa', 'o', 'currency', 's', 'em'];
+        fields.forEach((key) => {
+          if (data.form[key] === undefined || data.form[key] === '') return;
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = String(data.form[key]);
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
         return;
       }
 

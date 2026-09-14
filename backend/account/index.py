@@ -25,6 +25,10 @@ ROBOKASSA_MERCHANT_LOGIN = os.environ.get('ROBOKASSA_MERCHANT_LOGIN', '')
 ROBOKASSA_PASSWORD1 = os.environ.get('ROBOKASSA_PASSWORD1', '')
 ROBOKASSA_PASSWORD2 = os.environ.get('ROBOKASSA_PASSWORD2', '')
 
+FREEKASSA_SHOP_ID = os.environ.get('FREEKASSA_SHOP_ID', '')
+FREEKASSA_SECRET1 = os.environ.get('FREEKASSA_SECRET1', '')
+FREEKASSA_SECRET2 = os.environ.get('FREEKASSA_SECRET2', '')
+
 # Смещение для m_orderid AZVOX-платежей пополнения баланса, чтобы не путать
 # с id обычных заказов (orders.id) в общем webhook handle_azvox_status
 AZVOX_TOPUP_OFFSET = 1_000_000_000
@@ -32,6 +36,10 @@ AZVOX_TOPUP_OFFSET = 1_000_000_000
 # Смещение для InvId Робокассы при пополнении баланса, чтобы не путать
 # с id обычных заказов (orders.id) в общем webhook handle_robokassa_result
 ROBOKASSA_TOPUP_OFFSET = 2_000_000_000
+
+# Смещение для order_id FreeKassa при пополнении баланса, чтобы не путать
+# с id обычных заказов (orders.id) в общем webhook handle_freekassa_result
+FREEKASSA_TOPUP_OFFSET = 3_000_000_000
 
 
 def get_conn():
@@ -468,6 +476,20 @@ def handle_wallet(event, cur, conn, method, headers_common, token):
             form = build_robokassa_form(inv_id, amount, 'Пополнение баланса', user_email)
             return resp(200, {'ok': True, 'provider': 'ROBOKASSA', 'form': form, 'txId': tx_id}, headers_common)
 
+        if method_name == 'FREEKASSA':
+            if not FREEKASSA_SHOP_ID or not FREEKASSA_SECRET1:
+                return resp(500, {'error': 'FreeKassa не настроена. Обратитесь к администратору'}, headers_common)
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, method, amount, status) "
+                f"VALUES ('topup', %s, 'FREEKASSA', %s, 'pending') RETURNING id",
+                (user_id, amount),
+            )
+            tx_id = cur.fetchone()[0]
+            fk_order_id = FREEKASSA_TOPUP_OFFSET + tx_id
+            conn.commit()
+            form = build_freekassa_form(fk_order_id, amount, 'Пополнение баланса', user_email)
+            return resp(200, {'ok': True, 'provider': 'FREEKASSA', 'form': form, 'txId': tx_id}, headers_common)
+
         return resp(400, {'error': 'Этот способ пополнения пока недоступен'}, headers_common)
 
     if action == 'payout':
@@ -518,6 +540,29 @@ def build_robokassa_form(inv_id: int, amount: float, description: str, email: st
 
 def robokassa_check_signature(out_sum: str, inv_id: str, signature: str, password: str) -> bool:
     expected = hashlib.md5(f'{out_sum}:{inv_id}:{password}'.encode('utf-8')).hexdigest()
+    return expected.lower() == (signature or '').lower()
+
+
+def build_freekassa_form(order_id: int, amount: float, description: str, email: str = '') -> dict:
+    out_sum = f"{amount:.2f}"
+    sign = hashlib.md5(
+        f'{FREEKASSA_SHOP_ID}:{out_sum}:{FREEKASSA_SECRET1}:{order_id}'.encode('utf-8')
+    ).hexdigest()
+    return {
+        'm': FREEKASSA_SHOP_ID,
+        'oa': out_sum,
+        'o': order_id,
+        'currency': 'RUB',
+        's': sign,
+        'em': email,
+        'payUrl': 'https://pay.freekassa.ru/',
+    }
+
+
+def freekassa_check_signature(amount: str, order_id: str, signature: str) -> bool:
+    expected = hashlib.md5(
+        f'{FREEKASSA_SHOP_ID}:{amount}:{FREEKASSA_SECRET2}:{order_id}'.encode('utf-8')
+    ).hexdigest()
     return expected.lower() == (signature or '').lower()
 
 
@@ -695,6 +740,14 @@ def handle_payment_create(event, cur, conn, headers_common, token):
         form = build_robokassa_form(order_id, float(product[2]), product[1], email)
         return resp(200, {
             'orderId': order_id, 'provider': 'ROBOKASSA', 'form': form, 'accessToken': access_token,
+        }, headers_common)
+
+    if method == 'FREEKASSA':
+        if not FREEKASSA_SHOP_ID or not FREEKASSA_SECRET1:
+            return resp(500, {'error': 'FreeKassa не настроена. Обратитесь к администратору'}, headers_common)
+        form = build_freekassa_form(order_id, float(product[2]), product[1], email)
+        return resp(200, {
+            'orderId': order_id, 'provider': 'FREEKASSA', 'form': form, 'accessToken': access_token,
         }, headers_common)
 
     return resp(400, {'error': 'Этот способ оплаты скоро будет доступен'}, headers_common)
@@ -1064,6 +1117,89 @@ def handle_robokassa_result(event, cur, conn):
     return {'statusCode': 200, 'headers': text_headers, 'body': f'OK{inv_id}'}
 
 
+def handle_freekassa_result(event, cur, conn):
+    text_headers = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/plain'}
+    body = event.get('body') or ''
+    if event.get('isBase64Encoded'):
+        body = base64.b64decode(body).decode('utf-8')
+    if event.get('httpMethod') == 'GET':
+        params = event.get('queryStringParameters') or {}
+    else:
+        params = dict(urllib.parse.parse_qsl(body))
+
+    amount = params.get('AMOUNT')
+    order_id_raw = params.get('MERCHANT_ORDER_ID')
+    signature = params.get('SIGN')
+    if not amount or not order_id_raw or not signature:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    if not freekassa_check_signature(amount, order_id_raw, signature):
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    order_id = int(order_id_raw)
+
+    if order_id >= FREEKASSA_TOPUP_OFFSET:
+        tx_id = order_id - FREEKASSA_TOPUP_OFFSET
+        cur.execute(
+            f"SELECT id, status, amount, user_id FROM {SCHEMA}.payment_transactions "
+            f"WHERE id = %s AND kind = 'topup' AND method = 'FREEKASSA'",
+            (tx_id,),
+        )
+        tx = cur.fetchone()
+        if not tx:
+            return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+        if tx[1] == 'pending':
+            tx_amount = float(tx[2])
+            topup_user_id = tx[3]
+            cur.execute(
+                f"UPDATE {SCHEMA}.payment_transactions SET status = 'paid' WHERE id = %s",
+                (tx_id,),
+            )
+            cur.execute(
+                f"UPDATE {SCHEMA}.users SET balance = balance + %s WHERE id = %s",
+                (tx_amount, topup_user_id),
+            )
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.transactions (user_id, type, amount, description) "
+                f"VALUES (%s, 'topup', %s, 'Пополнение через FreeKassa')",
+                (topup_user_id, tx_amount),
+            )
+            cur.execute(f"SELECT name, email FROM {SCHEMA}.users WHERE id = %s", (topup_user_id,))
+            uname_row = cur.fetchone()
+            if uname_row:
+                cur.execute(
+                    f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id, is_read) "
+                    f"VALUES ('topup', 'Пополнение баланса', %s, %s, TRUE)",
+                    (f"{uname_row[0]} ({uname_row[1]}) пополнил баланс на {tx_amount:.0f} ₽ через FreeKassa", topup_user_id),
+                )
+            conn.commit()
+        return {'statusCode': 200, 'headers': text_headers, 'body': 'YES'}
+
+    cur.execute(f"SELECT id, status, amount, user_id FROM {SCHEMA}.orders WHERE id = %s", (order_id,))
+    order = cur.fetchone()
+    if not order:
+        return {'statusCode': 400, 'headers': text_headers, 'body': 'ERROR'}
+
+    if order[1] == 'pending':
+        cur.execute(
+            f"UPDATE {SCHEMA}.orders SET status = 'paid' WHERE id = %s",
+            (order_id,),
+        )
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.payment_transactions (kind, user_id, order_id, method, amount, status) "
+            f"VALUES ('order', %s, %s, 'FREEKASSA', %s, 'paid')",
+            (order[3], order_id, order[2]),
+        )
+        cur.execute(
+            f"INSERT INTO {SCHEMA}.admin_notifications (type, title, message, entity_id) "
+            f"VALUES ('purchase', 'Новая покупка', %s, %s)",
+            (f"Заказ #{order_id} на {float(order[2]):.0f} ₽ оплачен через FreeKassa", order_id),
+        )
+        conn.commit()
+
+    return {'statusCode': 200, 'headers': text_headers, 'body': 'YES'}
+
+
 def news_dict(row) -> dict:
     return {
         'id': row[0],
@@ -1245,6 +1381,8 @@ def handler(event: dict, context):
                 return handle_tbank_topup_notify(event, cur, conn)
             if payment_action == 'robokassa-result':
                 return handle_robokassa_result(event, cur, conn)
+            if payment_action == 'freekassa-result':
+                return handle_freekassa_result(event, cur, conn)
             return resp(400, {'error': 'Неизвестное действие оплаты'}, headers_common)
         if resource == 'orders' and method == 'GET':
             return handle_my_orders(cur, headers_common, token)

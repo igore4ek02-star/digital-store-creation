@@ -21,6 +21,7 @@ export interface Transaction {
 
 export const PAYMENTS = [
   { id: 'ROBOKASSA', label: 'Робокасса', desc: 'Карты, SberPay и другие способы' },
+  { id: 'FREEKASSA', label: 'FreeKassa', desc: 'Карты, электронные кошельки, крипта' },
 ] as const;
 
 interface Props {
