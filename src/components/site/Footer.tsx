@@ -85,7 +85,13 @@ const Footer = () => {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-6 md:flex-row">
+        <div className="mt-12 flex justify-center border-t border-border pt-8">
+          <a href="https://freekassa.net" title="big-dark-1">
+            <img src="https://cdn.freekassa.net/images/logos/banners/f/big-dark-1.png" alt="big-dark-1" />
+          </a>
+        </div>
+
+        <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-border pt-6 md:flex-row">
           <p className="text-xs text-muted-foreground">
             © 2026 Php-Skript. Магазин PHP-скриптов и цифровых товаров.
           </p>
